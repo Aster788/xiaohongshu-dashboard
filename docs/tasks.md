@@ -1,6 +1,6 @@
 # Caser 小红书数据看板 — 剩余任务列表（对齐 PRD）
 
-**当前状态（一行）**：**阶段 1–5 已落地**（含 Post links：`GET /api/notes`、`PATCH /api/notes/:id`、同页筛选与保存/清空）；下一步为阶段 6（公开展示页 `/`）。
+**当前状态（一行）**：**阶段 1–6 已落地**（公开展示页 `/`：Server 直读 DB、KPI/图表/Top 10/年份筛选、无 `/upload` 导航）；下一步为阶段 7（品牌视觉与部署收尾）。
 
 ---
 
@@ -143,7 +143,7 @@ flowchart LR
 
 ---
 
-## 阶段 6 — 公开展示页 `/`
+## 阶段 6 — 公开展示页 `/` ✅ 已落地
 
 **阶段目标**：PRD 第 1 条：英文 UI、Logo、KPI、粉丝曲线与近 30 日逻辑、爆发日提示、细分图、Top 10 by views、年份筛选、标题原样、`View post` 仅当有 URL。
 
@@ -161,6 +161,8 @@ flowchart LR
 
 - 未登录访客可打开 `/` 看到与库一致的宏观数据与图表（在无敏感数据环境下演示通过）。
 - 上传页 URL 需自行收藏，公开展示无链至 upload。
+
+**落地说明**：根路由仅保留 `app/(public)/page.tsx`（已删除与之冲突的占位 `app/page.tsx`）。`lib/dashboard/queries.ts` 的 `getDashboardSnapshot` 聚合 Settings、`follower.net_trend.`* 与三类趋势前缀、`Top 10` 笔记及年份列表；`components/dashboard/`* 为 Recharts 客户端图与年份 `Link` 筛选；`app/globals.css` 为与 `references/color-purple.md` 协调的轻量样式。Logo 使用 `/caser-logo-01.png`（请将 PRD 所指资源放入 `public/`）。数据契约摘要见 `lib/dashboard/types.ts` 文件头注释。
 
 ---
 

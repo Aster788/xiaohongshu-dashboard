@@ -14,14 +14,16 @@
     "db:migrate": "dotenv -c development -- prisma migrate dev",
     "db:push": "dotenv -c development -- prisma db push",
     "db:seed": "dotenv -c development -- prisma db seed",
-    "db:studio": "dotenv -c development -- prisma studio"
+    "db:studio": "dotenv -c development -- prisma studio",
+    "db:check-metrics": "dotenv -c development -- tsx scripts/check-account-daily-prefixes.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
     "exceljs": "^4.4.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
