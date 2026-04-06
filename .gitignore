@@ -1,0 +1,10 @@
+/node_modules
+/.next
+/out
+.env
+.env*.local
+npm-debug.log*
+.DS_Store
+
+# Cursor session debug logs (do not commit)
+.cursor/debug*.log

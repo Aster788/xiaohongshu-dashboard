@@ -1,0 +1,36 @@
+{
+  "name": "caser-rednote-dashboard",
+  "private": true,
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
+    "dev": "node scripts/dev.mjs",
+    "dev:any": "next dev",
+    "dev:clean": "npm run clean && node scripts/dev.mjs",
+    "dev:3002": "next dev -p 3002",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "dotenv -c development -- prisma generate",
+    "db:migrate": "dotenv -c development -- prisma migrate dev",
+    "db:push": "dotenv -c development -- prisma db push",
+    "db:seed": "dotenv -c development -- prisma db seed",
+    "db:studio": "dotenv -c development -- prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "exceljs": "^4.4.0",
+    "next": "^15.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "dotenv": "^17.4.0",
+    "dotenv-cli": "^8.0.0",
+    "prisma": "^6.19.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
