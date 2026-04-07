@@ -9,8 +9,11 @@ import type { MergeIngestResult, TableMergeStats } from "./mergeStats";
  */
 const EXISTING_KEY_CHUNK = 250;
 
-/** Parallel upserts per batch inside one transaction (faster than strict serial). */
-const UPSERT_BATCH = 80;
+/**
+ * Keep raw upsert batches moderate so each query stays under Postgres parameter limits
+ * while still collapsing hundreds of row writes into a handful of round-trips.
+ */
+const UPSERT_BATCH = 250;
 
 /** Default interactive tx timeout is 5s; large Excel merges exceed it → P2028. */
 const MERGE_TX_MAX_WAIT_MS = 60_000;
@@ -108,6 +111,80 @@ function tableStats(
   return { inserted, updated };
 }
 
+async function bulkUpsertNotes(
+  tx: Prisma.TransactionClient,
+  rows: ParsedNoteRow[],
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
+    const slice = rows.slice(i, i + UPSERT_BATCH);
+    const values = slice.map(
+      (n) => Prisma.sql`(
+        ${n.title},
+        ${n.publishedDate},
+        ${n.format},
+        ${n.impressions},
+        ${n.views},
+        ${n.likes},
+        ${n.comments},
+        ${n.saves},
+        ${n.shares},
+        ${n.followerGain}
+      )`,
+    );
+
+    await tx.$executeRaw(
+      Prisma.sql`
+        INSERT INTO notes (
+          title,
+          published_date,
+          format,
+          impressions,
+          views,
+          likes,
+          comments,
+          saves,
+          shares,
+          follower_gain
+        )
+        VALUES ${Prisma.join(values, ", ")}
+        ON CONFLICT (title, published_date) DO UPDATE SET
+          format = EXCLUDED.format,
+          impressions = EXCLUDED.impressions,
+          views = EXCLUDED.views,
+          likes = EXCLUDED.likes,
+          comments = EXCLUDED.comments,
+          saves = EXCLUDED.saves,
+          shares = EXCLUDED.shares,
+          follower_gain = EXCLUDED.follower_gain,
+          updated_at = NOW()
+      `,
+    );
+  }
+}
+
+async function bulkUpsertDaily(
+  tx: Prisma.TransactionClient,
+  rows: ParsedAccountDailyRow[],
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH) {
+    const slice = rows.slice(i, i + UPSERT_BATCH);
+    const values = slice.map((r) => {
+      const dec = new Prisma.Decimal(String(r.value));
+      return Prisma.sql`(${r.date}, ${r.metricKey}, ${dec})`;
+    });
+
+    await tx.$executeRaw(
+      Prisma.sql`
+        INSERT INTO account_daily (date, metric_key, value)
+        VALUES ${Prisma.join(values, ", ")}
+        ON CONFLICT (date, metric_key) DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = NOW()
+      `,
+    );
+  }
+}
+
 /**
  * Upsert PRD merge: same key overwrites row; keys absent from upload stay in DB.
  * `untouched` = rows still in DB whose key was not present in this payload (per table).
@@ -132,66 +209,8 @@ export async function mergeDomainIntoDb(
 
   await prisma.$transaction(
     async (tx) => {
-      for (let i = 0; i < notes.length; i += UPSERT_BATCH) {
-        const slice = notes.slice(i, i + UPSERT_BATCH);
-        await Promise.all(
-          slice.map((n) =>
-            tx.note.upsert({
-              where: {
-                title_publishedDate: {
-                  title: n.title,
-                  publishedDate: n.publishedDate,
-                },
-              },
-              create: {
-                title: n.title,
-                publishedDate: n.publishedDate,
-                format: n.format,
-                impressions: n.impressions,
-                views: n.views,
-                likes: n.likes,
-                comments: n.comments,
-                saves: n.saves,
-                shares: n.shares,
-                followerGain: n.followerGain,
-              },
-              update: {
-                format: n.format,
-                impressions: n.impressions,
-                views: n.views,
-                likes: n.likes,
-                comments: n.comments,
-                saves: n.saves,
-                shares: n.shares,
-                followerGain: n.followerGain,
-              },
-            }),
-          ),
-        );
-      }
-
-      for (let i = 0; i < daily.length; i += UPSERT_BATCH) {
-        const slice = daily.slice(i, i + UPSERT_BATCH);
-        await Promise.all(
-          slice.map((r) => {
-            const dec = new Prisma.Decimal(String(r.value));
-            return tx.accountDaily.upsert({
-              where: {
-                date_metricKey: {
-                  date: r.date,
-                  metricKey: r.metricKey,
-                },
-              },
-              create: {
-                date: r.date,
-                metricKey: r.metricKey,
-                value: dec,
-              },
-              update: { value: dec },
-            });
-          }),
-        );
-      }
+      await bulkUpsertNotes(tx, notes);
+      await bulkUpsertDaily(tx, daily);
     },
     {
       maxWait: MERGE_TX_MAX_WAIT_MS,
