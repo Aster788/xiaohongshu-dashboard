@@ -1,6 +1,5 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
-import { randomUUID } from "node:crypto";
 import type { DomainWorkbookResult, ParsedAccountDailyRow, ParsedNoteRow } from "@/lib/excel/domainTypes";
 import type { MergeIngestResult, TableMergeStats } from "./mergeStats";
 
@@ -120,7 +119,7 @@ async function bulkUpsertNotes(
     const slice = rows.slice(i, i + UPSERT_BATCH);
     const values = slice.map(
       (n) => Prisma.sql`(
-        ${randomUUID()},
+        ${globalThis.crypto.randomUUID()},
         ${n.title},
         ${n.publishedDate},
         ${n.format},
@@ -130,7 +129,8 @@ async function bulkUpsertNotes(
         ${n.comments},
         ${n.saves},
         ${n.shares},
-        ${n.followerGain}
+        ${n.followerGain},
+        NOW()
       )`,
     );
 
@@ -147,7 +147,8 @@ async function bulkUpsertNotes(
           comments,
           saves,
           shares,
-          follower_gain
+          follower_gain,
+          updated_at
         )
         VALUES ${Prisma.join(values, ", ")}
         ON CONFLICT (title, published_date) DO UPDATE SET
@@ -173,12 +174,12 @@ async function bulkUpsertDaily(
     const slice = rows.slice(i, i + UPSERT_BATCH);
     const values = slice.map((r) => {
       const dec = new Prisma.Decimal(String(r.value));
-      return Prisma.sql`(${randomUUID()}, ${r.date}, ${r.metricKey}, ${dec})`;
+      return Prisma.sql`(${globalThis.crypto.randomUUID()}, ${r.date}, ${r.metricKey}, ${dec}, NOW())`;
     });
 
     await tx.$executeRaw(
       Prisma.sql`
-        INSERT INTO account_daily (id, date, metric_key, value)
+        INSERT INTO account_daily (id, date, metric_key, value, updated_at)
         VALUES ${Prisma.join(values, ", ")}
         ON CONFLICT (date, metric_key) DO UPDATE SET
           value = EXCLUDED.value,
@@ -195,6 +196,7 @@ async function bulkUpsertDaily(
 export async function mergeDomainIntoDb(
   prisma: PrismaClient,
   domain: DomainWorkbookResult,
+  _runId = "unknown-run",
 ): Promise<MergeIngestResult> {
   const notes = domain.notes;
   const daily = domain.accountDaily;

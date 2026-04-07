@@ -1,11 +1,9 @@
 import { get } from "@vercel/blob";
 import { revalidateTag } from "next/cache";
 import { getWritable } from "workflow";
-import { prisma } from "@/lib/db";
 import { DASHBOARD_CACHE_TAG } from "@/lib/dashboard/queries";
 import { combineDomainIngests } from "@/lib/excel/domainMerge";
 import type { DomainWorkbookResult } from "@/lib/excel/domainTypes";
-import { mergeDomainIntoDb } from "@/lib/merge/mergeIngest";
 import type { KpiFormPatch } from "@/lib/settings/formKpi";
 import { mapWithConcurrency } from "@/lib/upload/async";
 import {
@@ -44,6 +42,13 @@ const PERSIST_RETRIES = 2;
 const CACHE_RETRIES = 2;
 const DEFAULT_LAUNCH_DATE = new Date("2025-06-15T00:00:00.000Z");
 
+function inferRunIdFromSourcePath(pathname: string | undefined): string {
+  if (!pathname) return "unknown-run";
+  const parts = pathname.split("/");
+  if (parts.length < 2) return "unknown-run";
+  return parts[1] || "unknown-run";
+}
+
 function toSourceSummary(source: UploadStartPayload["sources"][number]): UploadJobSourceSummary {
   return {
     fileName: source.fileName,
@@ -60,6 +65,7 @@ function allWorkbooksFailedMessage(errors: UploadParseError[]): string {
 
 async function applyKpiPatch(patch: KpiFormPatch): Promise<boolean> {
   "use step";
+  const { prisma } = await import("@/lib/db");
   if (Object.keys(patch).length === 0) {
     return false;
   }
@@ -79,14 +85,16 @@ async function applyKpiPatch(patch: KpiFormPatch): Promise<boolean> {
   return true;
 }
 
-async function mergeCombinedDomain(domain: DomainWorkbookResult) {
-  "use step";
-  return mergeDomainIntoDb(prisma, domain);
-}
-
 async function refreshDashboardCache() {
   "use step";
   revalidateTag(DASHBOARD_CACHE_TAG);
+}
+
+async function mergeCombinedDomainStep(domain: DomainWorkbookResult, runId: string) {
+  "use step";
+  const { prisma } = await import("@/lib/db");
+  const { mergeDomainIntoDb } = await import("@/lib/merge/mergeIngest");
+  return mergeDomainIntoDb(prisma, domain, runId);
 }
 
 async function writeProgressSnapshot(snapshot: UploadJobProgress) {
@@ -159,6 +167,7 @@ export async function uploadBlobSourcesWorkflow(
 ): Promise<UploadWorkflowResult> {
   "use workflow";
   console.info("[uploadBlobSources] started", input.sources.length);
+  const runId = inferRunIdFromSourcePath(input.sources[0]?.pathname);
 
   await writeProgressSnapshot(queuedProgress(input.sources.length));
 
@@ -207,7 +216,7 @@ export async function uploadBlobSourcesWorkflow(
       }),
     );
 
-    const mergeResult = await retryAsync(() => mergeCombinedDomain(combined), {
+    const mergeResult = await retryAsync(() => mergeCombinedDomainStep(combined, runId), {
       retries: PERSIST_RETRIES,
       shouldRetry: isTransientUploadError,
       onRetry: async (error, attempt) => {
