@@ -1,8 +1,17 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mergeWorkbookParseResults } from "@/lib/excel/workbookMerge";
 import type { WorkbookParseResult } from "@/lib/excel/workbookTypes";
+import { mapWithConcurrency } from "@/lib/upload/async";
+import {
+  parseUploadJobStatusResponse,
+  shouldPollUploadJob,
+  type ClientUploadJobStatusResponse,
+  type UploadMergeSnapshot,
+} from "@/lib/upload/clientStatus";
+import { buildUploadBlobPath } from "@/lib/upload/progress";
 
 const NOTES_PAGE_SIZE = 20;
 
@@ -41,20 +50,17 @@ type TableMergeStats = {
   untouched: number;
 };
 
-type UploadMergeSnapshot = {
-  inserted: number;
-  updated: number;
-  untouched: number;
-  notes?: TableMergeStats;
-  accountDaily?: TableMergeStats;
-  summary?: {
-    filesProcessed: number;
-    filesFailed: number;
-    noteRowsInPayload: number;
-    accountDailyRowsInPayload: number;
-  };
-  warnings?: string[];
-  errors?: { fileName: string; message: string }[];
+type QueuedUploadJob = {
+  jobId: string;
+  status: "queued";
+  filesQueued: number;
+  totalBytes: number;
+  kpiSaved: boolean;
+  sources: Array<{
+    fileName: string;
+    pathname: string;
+    size: number;
+  }>;
 };
 
 const emptyManual: ManualKpi = {
@@ -109,56 +115,49 @@ function isTableMergeStats(x: unknown): x is TableMergeStats {
   );
 }
 
-function parseUploadMergeSnapshot(data: unknown): UploadMergeSnapshot | null {
+function parseQueuedUploadJob(data: unknown): QueuedUploadJob | null {
   if (!data || typeof data !== "object") return null;
   const o = data as Record<string, unknown>;
   if (
-    typeof o.inserted !== "number" ||
-    typeof o.updated !== "number" ||
-    typeof o.untouched !== "number"
+    typeof o.jobId !== "string" ||
+    o.status !== "queued" ||
+    typeof o.filesQueued !== "number" ||
+    typeof o.totalBytes !== "number" ||
+    typeof o.kpiSaved !== "boolean" ||
+    !Array.isArray(o.sources)
   ) {
     return null;
   }
-  const out: UploadMergeSnapshot = {
-    inserted: o.inserted,
-    updated: o.updated,
-    untouched: o.untouched,
-  };
-  if ("notes" in o && isTableMergeStats(o.notes)) out.notes = o.notes;
-  if ("accountDaily" in o && isTableMergeStats(o.accountDaily)) {
-    out.accountDaily = o.accountDaily;
-  }
-  if (o.summary && typeof o.summary === "object" && !Array.isArray(o.summary)) {
-    const s = o.summary as Record<string, unknown>;
+
+  const sources = o.sources.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
     if (
-      typeof s.filesProcessed === "number" &&
-      typeof s.filesFailed === "number" &&
-      typeof s.noteRowsInPayload === "number" &&
-      typeof s.accountDailyRowsInPayload === "number"
+      typeof row.fileName !== "string" ||
+      typeof row.pathname !== "string" ||
+      typeof row.size !== "number"
     ) {
-      out.summary = {
-        filesProcessed: s.filesProcessed,
-        filesFailed: s.filesFailed,
-        noteRowsInPayload: s.noteRowsInPayload,
-        accountDailyRowsInPayload: s.accountDailyRowsInPayload,
-      };
+      return [];
     }
-  }
-  if (Array.isArray(o.warnings) && o.warnings.every((w) => typeof w === "string")) {
-    out.warnings = o.warnings;
-  }
-  if (Array.isArray(o.errors)) {
-    const errs: { fileName: string; message: string }[] = [];
-    for (const e of o.errors) {
-      if (!e || typeof e !== "object") continue;
-      const r = e as Record<string, unknown>;
-      if (typeof r.fileName === "string" && typeof r.message === "string") {
-        errs.push({ fileName: r.fileName, message: r.message });
-      }
-    }
-    if (errs.length > 0) out.errors = errs;
-  }
-  return out;
+    return [
+      {
+        fileName: row.fileName,
+        pathname: row.pathname,
+        size: row.size,
+      },
+    ];
+  });
+
+  if (sources.length !== o.sources.length) return null;
+
+  return {
+    jobId: o.jobId,
+    status: "queued",
+    filesQueued: o.filesQueued,
+    totalBytes: o.totalBytes,
+    kpiSaved: o.kpiSaved,
+    sources,
+  };
 }
 
 /** Same rules as PUT /api/settings: all four fields required and valid. */
@@ -190,6 +189,9 @@ export default function UploadPage() {
   const [uploadSecret, setUploadSecret] = useState("");
   const [manual, setManual] = useState<ManualKpi>(emptyManual);
   const [mergeSnapshot, setMergeSnapshot] = useState<UploadMergeSnapshot | null>(null);
+  const [queuedUploadJob, setQueuedUploadJob] = useState<QueuedUploadJob | null>(null);
+  const [uploadJobStatus, setUploadJobStatus] =
+    useState<ClientUploadJobStatusResponse | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [includeKpisWithUpload, setIncludeKpisWithUpload] = useState(false);
@@ -220,6 +222,7 @@ export default function UploadPage() {
   );
   const [draftUrls, setDraftUrls] = useState<Record<string, string>>({});
   const [rowActionId, setRowActionId] = useState<string | null>(null);
+  const completedUploadJobIdRef = useRef<string | null>(null);
 
   const notesQueryRef = useRef({
     secret: "",
@@ -406,6 +409,116 @@ export default function UploadPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional debounce trigger set
   }, [uploadSecret, appliedNotesFilters, notesPage]);
 
+  useEffect(() => {
+    if (!queuedUploadJob) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
+    const secret = uploadSecret.trim();
+    const headers: HeadersInit = {};
+    if (secret) {
+      headers.Authorization = `Bearer ${secret}`;
+    }
+
+    const refreshAfterCompletion = async (status: ClientUploadJobStatusResponse) => {
+      if (completedUploadJobIdRef.current === status.jobId) return;
+      completedUploadJobIdRef.current = status.jobId;
+
+      if (status.result?.kpiSaved) {
+        const refreshed = await fetch("/api/settings", { headers }).catch(() => null);
+        if (!cancelled && refreshed?.ok) {
+          const data: unknown = await refreshed.json().catch(() => null);
+          if (isSettingsResponse(data)) {
+            applySettingsToForm(data);
+          }
+        }
+      }
+
+      if (!cancelled) {
+        void fetchNotesListNow({ silent: true });
+      }
+    };
+
+    const schedulePoll = (delayMs: number) => {
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        void pollStatus();
+      }, delayMs);
+    };
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetch(`/api/upload/${queuedUploadJob.jobId}`, {
+          headers,
+          cache: "no-store",
+        });
+        const data: unknown = await res.json().catch(() => null);
+
+        if (cancelled) return;
+
+        if (res.status === 401) {
+          setUploadError("Unauthorized. Check the upload secret.");
+          return;
+        }
+
+        if (!res.ok) {
+          const msg =
+            data &&
+            typeof data === "object" &&
+            "error" in data &&
+            typeof (data as { error: unknown }).error === "string"
+              ? (data as { error: string }).error
+              : `Status check failed (${res.status})`;
+
+          if (res.status >= 500) {
+            setUploadError(`${msg}. Retrying…`);
+            schedulePoll(2000);
+            return;
+          }
+
+          setUploadError(msg);
+          return;
+        }
+
+        const parsed = parseUploadJobStatusResponse(data);
+        if (!parsed) {
+          setUploadError("Unexpected upload job status response.");
+          return;
+        }
+
+        setUploadJobStatus(parsed);
+        if (parsed.result) {
+          setMergeSnapshot(parsed.result);
+        }
+        setUploadError(parsed.error);
+
+        if (shouldPollUploadJob(parsed.status)) {
+          schedulePoll(1500);
+          return;
+        }
+
+        if (parsed.status === "completed") {
+          await refreshAfterCompletion(parsed);
+        }
+      } catch {
+        if (cancelled) return;
+        setUploadError("Network error while checking background status. Retrying…");
+        schedulePoll(2000);
+      }
+    };
+
+    schedulePoll(0);
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+    // fetchNotesListNow reads refs/state-only internals and is intentionally reused here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queuedUploadJob, uploadSecret, applySettingsToForm]);
+
   async function persistUpload(fileList: FileList | null) {
     const files = fileList ? Array.from(fileList) : [];
     if (files.length === 0) return;
@@ -431,28 +544,66 @@ export default function UploadPage() {
 
     setUploadError(null);
     setMergeSnapshot(null);
+    setQueuedUploadJob(null);
+    setUploadJobStatus(null);
+    completedUploadJobIdRef.current = null;
     setUploadLoading(true);
 
     const secret = uploadSecret.trim();
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     if (secret) {
       headers.Authorization = `Bearer ${secret}`;
     }
 
-    const body = new FormData();
-    for (const file of files) {
-      body.append("files[]", file);
-    }
-
-    if (includeKpisWithUpload) {
-      body.set("followers", manual.followersTotal.trim());
-      body.set("totalPosts", manual.totalPosts.trim());
-      body.set("likesAndSaves", manual.likesAndSavesTotal.trim());
-      body.set("launchDate", manual.launchDate.trim());
-    }
-
     try {
-      const res = await fetch("/api/upload", { method: "POST", body, headers });
+      const uploadBatchId = crypto.randomUUID();
+      const sources = await mapWithConcurrency(files, 3, async (file, index) => {
+        const blobPath = buildUploadBlobPath({
+          runId: uploadBatchId,
+          fileIndex: index,
+          fileName: file.name,
+        });
+
+        const blob = await upload(blobPath, file, {
+          access: "private",
+          handleUploadUrl: "/api/upload/blob",
+          headers,
+          multipart: file.size >= 5 * 1024 * 1024,
+        });
+
+        return {
+          fileName: file.name,
+          pathname: blob.pathname,
+          url: blob.url,
+          downloadUrl: blob.downloadUrl,
+          size: file.size,
+          contentType: file.type || blob.contentType,
+          uploadedAt: new Date().toISOString(),
+        };
+      });
+
+      const kickoffPayload = {
+        sources,
+        ...(includeKpisWithUpload
+          ? {
+              kpiPatch: {
+                followers: manual.followersTotal.trim(),
+                totalPosts: manual.totalPosts.trim(),
+                likesAndSaves: manual.likesAndSavesTotal.trim(),
+                launchDate: manual.launchDate.trim(),
+              },
+            }
+          : {}),
+      };
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(kickoffPayload),
+      });
       const data: unknown = await res.json().catch(() => null);
 
       if (res.status === 401) {
@@ -472,14 +623,14 @@ export default function UploadPage() {
         return;
       }
 
-      const snap = parseUploadMergeSnapshot(data);
-      if (!snap) {
+      const queued = parseQueuedUploadJob(data);
+      if (!queued) {
         setUploadError("Unexpected upload response.");
         return;
       }
-      setMergeSnapshot(snap);
+      setQueuedUploadJob(queued);
 
-      if (includeKpisWithUpload) {
+      if (queued.kpiSaved) {
         const refreshed = await fetch("/api/settings", { headers }).catch(() => null);
         if (refreshed?.ok) {
           const s: unknown = await refreshed.json().catch(() => null);
@@ -791,10 +942,10 @@ export default function UploadPage() {
       <section aria-label="Upload and merge">
         <h2>Import workbooks</h2>
         <p>
-          Select one or more official export files (.xlsx). Files are merged on the
-          server and written to the database (
-          <code>POST /api/upload</code>, field <code>files[]</code>
-          ). Hold Ctrl (Windows) or Command (macOS) to pick multiple files.
+          Select one or more official export files (.xlsx). Files upload to Blob first,
+          then <code>POST /api/upload</code> queues a background workflow that parses and
+          writes them to the database. Hold Ctrl (Windows) or Command (macOS) to pick
+          multiple files.
         </p>
         <div>
           <label htmlFor="upload-secret">Upload secret</label>
@@ -818,10 +969,10 @@ export default function UploadPage() {
             Save KPI fields with this upload
           </label>
           <p>
-            When enabled, the same KPI values as in Manual KPI below are sent as form
-            fields (<code>followers</code>, <code>totalPosts</code>,{" "}
+            When enabled, the same KPI values as in Manual KPI below are sent with the
+            upload request (<code>followers</code>, <code>totalPosts</code>,{" "}
             <code>likesAndSaves</code>, <code>launchDate</code>) and must be valid before
-            upload runs. Omitted when unchecked (use Save KPIs for{" "}
+            the background job is queued. Omitted when unchecked (use Save KPIs for{" "}
             <code>PUT /api/settings</code> only).
           </p>
         </div>
@@ -854,11 +1005,64 @@ export default function UploadPage() {
           />
           <p>Or drop files here.</p>
         </div>
-        {uploadLoading ? <p>Uploading and merging…</p> : null}
+        {uploadLoading ? <p>Uploading files to Blob and queueing background job…</p> : null}
         {uploadError ? (
           <p role="alert">
             Error: {uploadError}
           </p>
+        ) : null}
+        {queuedUploadJob ? (
+          <div
+            style={{
+              border: "1px solid #ccc",
+              padding: "12px",
+              marginTop: "8px",
+            }}
+          >
+            <h3>Background job</h3>
+            <p>
+              Job ID: <code>{queuedUploadJob.jobId}</code>
+            </p>
+            <p>
+              Workflow status: <strong>{uploadJobStatus?.status ?? queuedUploadJob.status}</strong>
+            </p>
+            {uploadJobStatus?.progress ? (
+              <>
+                <p>
+                  Progress: {uploadJobStatus.progress.progressPercent}% -{" "}
+                  {uploadJobStatus.progress.label}
+                </p>
+                <p>{uploadJobStatus.progress.detail}</p>
+              </>
+            ) : (
+              <p>Waiting for workflow progress…</p>
+            )}
+            <p>
+              Files uploaded to Blob: {queuedUploadJob.filesQueued} (
+              {queuedUploadJob.totalBytes.toLocaleString()} bytes)
+            </p>
+            <ul>
+              {queuedUploadJob.sources.map((source) => (
+                <li key={source.pathname}>
+                  {source.fileName} {"->"} <code>{source.pathname}</code>
+                </li>
+              ))}
+            </ul>
+            <p>
+              Status endpoint: <code>/api/upload/{queuedUploadJob.jobId}</code>
+            </p>
+            {uploadJobStatus?.completedAt ? (
+              <p>Completed at: {new Date(uploadJobStatus.completedAt).toLocaleString()}</p>
+            ) : null}
+            {uploadJobStatus?.status === "completed" ? (
+              <p>Background import finished. Merge results are shown below.</p>
+            ) : null}
+            {uploadJobStatus?.status === "failed" || uploadJobStatus?.status === "cancelled" ? (
+              <p role="alert">
+                Background import stopped: {uploadJobStatus.error ?? "Workflow did not complete."}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </section>
 
