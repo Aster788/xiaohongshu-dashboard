@@ -113,15 +113,16 @@ function mergeNetFollowerByDate(
   return merged;
 }
 
-function last30DayPoints(map: Map<string, number>): TrendPointDTO[] {
+function fullDateSpanPoints(map: Map<string, number>): TrendPointDTO[] {
   if (map.size === 0) return [];
   const sorted = [...map.keys()].sort();
+  const startStr = sorted[0]!;
   const endStr = sorted[sorted.length - 1]!;
+  const startDate = parseIsoDateUTC(startStr);
   const endDate = parseIsoDateUTC(endStr);
-  const start = addUtcDays(endDate, -29);
   const pts: TrendPointDTO[] = [];
   for (
-    let d = new Date(start.getTime());
+    let d = new Date(startDate.getTime());
     utcCalendarDaysBetween(d, endDate) >= 0;
     d = addUtcDays(d, 1)
   ) {
@@ -515,10 +516,10 @@ export async function getDashboardSnapshot(
       settings.followers,
       netByDate,
     ),
-    coverCtrTrend: last30DayPoints(coverMap),
-    likesAndSavesTrend: last30DayPoints(mergeDailyMaps(likesMap, savesMap)),
-    viewsTrend: last30DayPoints(viewsMap),
-    publishTrend: last30DayPoints(publishMap),
+    coverCtrTrend: fullDateSpanPoints(coverMap),
+    likesAndSavesTrend: fullDateSpanPoints(mergeDailyMaps(likesMap, savesMap)),
+    viewsTrend: fullDateSpanPoints(viewsMap),
+    publishTrend: fullDateSpanPoints(publishMap),
     years,
     topNotesAll: allTopNoteCandidates.map(mapTopNoteRow),
   };

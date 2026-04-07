@@ -43,6 +43,17 @@ function formatInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+function formatDateFromIso(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1));
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function SectionHeading({
   index,
   title,
@@ -78,13 +89,23 @@ export default async function DashboardPage({
   const snap = await getDashboardSnapshotCached(yearFilter, sortKey);
   const followerSubtitle =
     "Follower growth from account creation date to the latest update date.";
-  const trendSubtitle = "Data since Feb 15, 2026";
+  const trendStartIso = [
+    snap.viewsTrend[0]?.dateIso,
+    snap.likesAndSavesTrend[0]?.dateIso,
+    snap.coverCtrTrend[0]?.dateIso,
+    snap.publishTrend[0]?.dateIso,
+  ]
+    .filter((v): v is string => Boolean(v))
+    .sort()[0];
+  const trendSubtitle = trendStartIso
+    ? `Data since ${formatDateFromIso(trendStartIso)}`
+    : "No trend data yet";
   const trendTabs: TrendTab[] = [
     {
       key: "views",
       label: "Views",
       valueLabel: "Views",
-      chartAriaLabel: "Views over the last 30 ingested days.",
+      chartAriaLabel: "Views over the full ingested date range.",
       data: snap.viewsTrend,
     },
     {
@@ -92,14 +113,14 @@ export default async function DashboardPage({
       label: "Likes & saves",
       valueLabel: "Likes & saves",
       chartAriaLabel:
-        "Daily likes plus saves summed over the last 30 ingested days.",
+        "Daily likes plus saves summed over the full ingested date range.",
       data: snap.likesAndSavesTrend,
     },
     {
       key: "cover-ctr",
       label: "Cover CTR",
       valueLabel: "CTR",
-      chartAriaLabel: "Cover CTR over the last 30 ingested days.",
+      chartAriaLabel: "Cover CTR over the full ingested date range.",
       data: snap.coverCtrTrend,
       note: "Note: CTR = Click-Through Rate(点击率)，CTR = Views ÷ Impression x 100%.",
     },
@@ -107,7 +128,7 @@ export default async function DashboardPage({
       key: "published",
       label: "Published posts",
       valueLabel: "Published",
-      chartAriaLabel: "Published posts over the last 30 ingested days.",
+      chartAriaLabel: "Published posts over the full ingested date range.",
       data: snap.publishTrend,
       chartType: "monthlyBar",
     },
