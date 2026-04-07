@@ -1,0 +1,58 @@
+// Caser Rednote — data model aligned with docs/PRD.md
+// AccountDaily uses metricKey + date + value for simple trend queries (per PRD).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 笔记列表明细；合并键 title + publishedDate（日）
+model Note {
+  id            String   @id @default(cuid())
+  title         String   @db.Text
+  publishedDate DateTime @map("published_date") @db.Date
+  /// 体裁（导出原样）
+  format        String?  @db.Text
+  impressions   BigInt?
+  views         Int?
+  likes         Int?
+  comments      Int?
+  saves         Int?
+  shares        Int?
+  followerGain  Int?     @map("follower_gain")
+  postUrl       String?  @map("post_url") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([title, publishedDate], map: "notes_title_published_date_key")
+  @@map("notes")
+}
+
+/// 账号按日指标：净涨粉、封面点击率、互动趋势等，一行一 metric
+model AccountDaily {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  metricKey String   @map("metric_key") @db.VarChar(190)
+  value     Decimal  @db.Decimal(24, 8)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([date, metricKey], map: "account_daily_date_metric_key")
+  @@map("account_daily")
+}
+
+/// 单行配置：手填宏观 KPI + launchDate（展示页以手填为准）
+model Settings {
+  id            Int      @id @default(1)
+  followers     Int      @default(0)
+  totalPosts    Int      @default(0) @map("total_posts")
+  likesAndSaves Int      @default(0) @map("likes_and_saves")
+  launchDate    DateTime @map("launch_date") @db.Date
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}

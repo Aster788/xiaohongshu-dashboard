@@ -1,0 +1,64 @@
+---
+description: Caser Rednote (Xiaohongshu) dashboard — stack, style, boundaries for this repo
+globs: "**/*.{ts,tsx,js,jsx,mjs,cjs,json,md}"
+alwaysApply: true
+---
+
+# Caser Rednote Dashboard — 项目规则
+
+以 [docs/PRD.md](docs/PRD.md) 为需求与方案准绳；实现时优先对齐 PRD，避免自行扩大范围。
+
+## 技术栈（固定方向）
+
+- **Next.js App Router** + **TypeScript** + **React**。
+- **PostgreSQL**；ORM 使用 **Prisma**（若已选 Drizzle 则全仓统一，勿混用）。
+- **Excel**：服务端用 `xlsx` 或 **exceljs** 之一；解析逻辑仅在 **Node.js runtime**（Route Handler / Server Action 需 `runtime = 'nodejs'`），**勿在 Edge** 解析二进制 xlsx。
+- **图表**：Recharts（或与 PRD 一致的单一库），避免同时引入多套图表库。
+- **部署**：默认面向 **Vercel**；密钥与 DB 走环境变量，**禁止**把 `DATABASE_URL`、`UPLOAD_SECRET` 写入仓库。
+
+## 代码风格
+
+- **语言**：UI 文案 **英文**；笔记标题、体裁等 **来自导出的字符串原样展示**，不做翻译或 `toLocale*` 改写标题内容。
+- **命名**：TS/React 用 **camelCase** 变量函数、**PascalCase** 组件；数据库列与 Prisma 字段用清晰英文 snake_case 映射由 schema 定义。
+- **类型**：新代码 **避免 `any`**；对外部 Excel 行可用明确 `unknown` + 校验/narrow。
+- **组件**：优先小文件、单一职责；Client 组件仅在需要交互/图表时用 `'use client'`，其余默认 Server Component。
+
+## UI / 主题
+
+- **紫色 token 为主**：实现主题、CSS 变量或 Tailwind 扩展时，以 [`references/color-purple.md`](references/color-purple.md) 中的紫色为**主色来源**，优先通过语义化 token（如 `primary`、`surface`、`muted`）引用，避免在组件里散落硬编码色值。
+- **禁止**随意引入与品牌**无关**的高饱和对比色（例如大面积纯红/亮绿/橙作装饰或主背景）。
+- **辅助色**：从与主紫**同冷暖倾向**的 **紫灰、浅紫、深紫** 等延伸（含图表系列色）；中性色倾向**冷灰或带紫相的灰**，保证与主色协调。
+- 产品层面的「做什么、为什么」以 [docs/PRD.md](docs/PRD.md) 中「品牌与视觉 / UI 原则」为准；色板 **HEX 以 `references/color-purple.md` 为准**。
+
+## 代码组织原则
+
+- **`app/`**：路由与页面；API 放在 `app/api/.../route.ts`。
+- **`lib/`**：无 UI 的领域逻辑——`lib/db`、`lib/excel`、`lib/merge` 等；**禁止**在 `lib/` 里写大量 JSX。
+- **`components/`**：可复用展示组件；按功能分子目录（如 `components/dashboard`）。
+- **静态资源**：运行时需要引用的 Logo 等放 **`public/`**（构建时从 `assests/` 复制或文档说明同步路径）；PRD 要求使用 **`assests/caser-logo-01.png`** 作为源素材时，保持与仓库实际路径一致。
+- **环境变量**：仅用 `process.env.*` 读取服务端变量；客户端需要的配置通过 props 或公开、无密的 `NEXT_PUBLIC_*` 传递（**不要**暴露密钥）。
+
+## 禁止事项
+
+- **禁止**实现小红书爬虫、无头浏览器自动登录、或根据主页 URL + 标题自动抓取帖子链接。
+- **禁止**将上传页链接加入面向老师的**公开展示导航**。
+- **禁止**用纯 localStorage/IndexedDB **替代**服务端作为合并后历史数据的唯一来源（手填 KPI 与合并结果必须落库）。
+- **禁止**在 Edge Runtime 中处理 multipart xlsx 解析。
+- **禁止**在展示页对笔记标题做机器翻译或强制语言转换。
+- **首版禁止**依赖「批量补充表上传」完成 postUrl 映射（仅手动 Post links UI + `PATCH`）。
+
+## API 与安全
+
+- **`/api/upload`、`PUT /api/settings`、`GET/PATCH` 笔记链接相关**：必须校验 **`UPLOAD_SECRET`**（如 `Authorization: Bearer`）；失败返回 **401**，勿泄露细节。
+- **外链**：`postUrl` 打开时使用 `target="_blank"` 与 `rel="noopener noreferrer"`。
+- **输入**：multipart 限制文件类型与大小；URL 校验 `http(s):`；防路径遍历与 zip bomb 式超大上传（设置合理上限）。
+
+## Excel 解析约定
+
+- 以 **中文 Sheet 名、中文列头** 为主；别名映射集中放在常量或配置文件，附注释。
+- **笔记列表明细**：第 1 行为说明、第 2 行为表头，数据从第 3 行起；日期字段按中文格式解析并归一到 **日**，参与唯一键 **`(title, publishedDate)`**。
+- 合并：**同键覆盖**；**新文件中不存在的旧记录保留**。
+
+## 与 PRD 冲突时
+
+以 **PRD + 本 rules** 为准；若产品变更，先改 **docs/PRD.md** 再改代码。
