@@ -7,7 +7,8 @@
  *   when those rows exist for a date (see `caser-xiaohongshu-data` / Excel routing); otherwise
  *   `follower.net_trend.*`. Span: max(launch, first data day) → latest date, aligned to KPI;
  *   burst when daily net ≥ 15.
- * - Trend mini-charts: last 30 calendar days ending at latest ingested date, summing keys
+ * - Trend mini-charts: full span from first ingested date to latest ingested date,
+ *   with missing dates filled as 0; keys include
  *   `view.cover_ctr.*`, merged `engage.likes_trend.*` + `engage.saves_trend.*` (likes & saves),
  *   `view.views_trend.*`, and `publish.total_trend.*`.
  * - Top notes: `Note` ordered by selected sort (`views`, `impressions`, `likes & saves`,
