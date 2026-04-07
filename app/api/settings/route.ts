@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
+import { DASHBOARD_CACHE_TAG } from "@/lib/dashboard/queries";
 import { parseIsoDateOnly } from "@/lib/excel/chineseDate";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 /**
  * GET /api/settings — load KPIs for /upload pre-fill.
@@ -127,6 +130,7 @@ export async function PUT(request: Request) {
     },
     update: patch,
   });
+  revalidateTag(DASHBOARD_CACHE_TAG);
 
   return NextResponse.json({
     followers: updated.followers,

@@ -10,6 +10,7 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
+    "perf:home": "node scripts/loadtest-home.mjs",
     "db:generate": "dotenv -c development -- prisma generate",
     "db:migrate": "dotenv -c development -- prisma migrate dev",
     "db:push": "dotenv -c development -- prisma db push",

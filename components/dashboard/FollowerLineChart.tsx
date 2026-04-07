@@ -129,6 +129,7 @@ export function FollowerLineChart({
   const gradId = `followerFill-${uid}`;
   const shadowId = `followerLineShadow-${uid}`;
   const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const chartData = useMemo(() => enrichFollowerSeries(data), [data]);
   const monthTicks = useMemo(() => monthTickDateIsos(data), [data]);
@@ -136,6 +137,11 @@ export function FollowerLineChart({
 
   useEffect(() => {
     setMounted(true);
+    const mql = window.matchMedia("(max-width: 760px)");
+    const sync = () => setIsMobile(mql.matches);
+    sync();
+    mql.addEventListener("change", sync);
+    return () => mql.removeEventListener("change", sync);
   }, []);
 
   if (chartData.length === 0) {
@@ -145,27 +151,36 @@ export function FollowerLineChart({
   return (
     <div className="chart-figure" role="img" aria-label={ariaLabel}>
       <div
-        className="chart-box"
-        style={{ width: "100%", minWidth: 0, height: 320 }}
+        className="chart-box chart-box-lg"
+        style={{ width: "100%", minWidth: 0 }}
         aria-hidden="true"
       >
         {mounted ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <ComposedChart
               data={chartData}
-              margin={{ top: 12, right: 34, left: 4, bottom: 24 }}
+              margin={
+                isMobile
+                  ? { top: 8, right: 16, left: 0, bottom: 16 }
+                  : { top: 12, right: 34, left: 4, bottom: 24 }
+              }
             >
               <defs>
                 <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="0%"
                     stopColor="var(--caser-chart-primary)"
-                    stopOpacity={0.26}
+                    stopOpacity={0.24}
+                  />
+                  <stop
+                    offset="78%"
+                    stopColor="var(--caser-chart-primary)"
+                    stopOpacity={0.06}
                   />
                   <stop
                     offset="100%"
                     stopColor="var(--caser-chart-primary)"
-                    stopOpacity={0}
+                    stopOpacity={0.01}
                   />
                 </linearGradient>
                 <filter
@@ -179,8 +194,8 @@ export function FollowerLineChart({
                     dx="0"
                     dy="1"
                     stdDeviation="2.2"
-                    floodColor="#4338ca"
-                    floodOpacity="0.16"
+                    floodColor="#5b21b6"
+                    floodOpacity="0.18"
                   />
                 </filter>
               </defs>
@@ -211,7 +226,7 @@ export function FollowerLineChart({
               <YAxis
                 tick={axisTick}
                 tickFormatter={(v) => Number(v).toLocaleString("en-US")}
-                width={58}
+                width={isMobile ? 48 : 58}
                 domain={[0, "auto"]}
                 padding={{ top: 10, bottom: 6 }}
                 axisLine={false}

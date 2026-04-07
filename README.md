@@ -23,3 +23,5 @@ Configure these in your host (e.g. Vercel **Settings → Environment Variables**
 **After setting variables:** run migrations against the production database (`npx prisma migrate deploy` or your platform’s documented flow), then redeploy so the app picks up new env values.
 
 **Large uploads:** very big Excel imports may run for many seconds; serverless platforms enforce their own request time limits—if uploads time out in production, increase the function `maxDuration` (where supported) or split imports.
+
+Detailed deployment checklist: `docs/vercel-deploy-runbook.md`.

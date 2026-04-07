@@ -4,6 +4,7 @@ import { parseWorkbookBuffer } from "@/lib/excel/parseWorkbook";
 
 /** Preview-only: returns raw per-sheet cell grids for debugging. Persisted ingest uses POST /api/upload. */
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 const MAX_BYTES = 15 * 1024 * 1024;
 

@@ -1,6 +1,6 @@
 # Caser 小红书数据看板 — 剩余任务列表（对齐 PRD）
 
-**当前状态（一行）**：**阶段 1–6 已落地**（公开展示页 `/`：Server 直读 DB、KPI/图表/Top 10/年份筛选、无 `/upload` 导航）；下一步为阶段 7（品牌视觉与部署收尾）。
+**当前状态（一行）**：**阶段 1–6 已落地；阶段 7 Step 1（主题与多端兼容）已完成**（紫色 token 与小屏可读性已统一，详见 `docs/stage7-visual-checklist.md` 与 `docs/stage7-step1-validation.md`）；待完成阶段 7 的部署文档与可选 Windows build 稳定性收尾。
 
 ---
 
@@ -172,10 +172,12 @@ flowchart LR
 
 **任务条目**
 
-1. 主题：紫色 token（Tailwind/CSS 变量等），避免无关高饱和跳色；图表色与紫系协调。
-2. Logo：`assests/caser-logo-01.png` → 运行引用路径与 PRD 一致（如构建时复制到 `public/` 并在文档说明）。
-3. 环境变量与生产数据库、密钥配置文档（不含真实值）。
-4. （可选）解决 Windows 上 `next build` 偶发 `spawn UNKNOWN` 等环境问题，保证 CI/部署可稳定 build。
+1. ✅ 主题：紫色 token（Tailwind/CSS 变量等），避免无关高饱和跳色；图表色与紫系协调。  
+   落地：`app/globals.css` 已统一主色 token 与交互态色；移动端断点补齐（760px/420px），减少横向溢出与小屏拥挤。验收清单见 `docs/stage7-visual-checklist.md`。
+2. ✅ Logo：`assests/caser-logo-01.png` → 运行引用路径与 PRD 一致（如构建时复制到 `public/` 并在文档说明）。  
+   落地：当前运行路径为 `/caser-logo-01.png`，资源位于 `public/caser-logo-01.png`，与首页实现一致。
+3. ⏳ 环境变量与生产数据库、密钥配置文档（不含真实值）。
+4. ⏳（可选）解决 Windows 上 `next build` 偶发 `spawn UNKNOWN`/`EPERM` 等环境问题，保证 CI/部署可稳定 build。
 
 **依赖**：阶段 6（展示页）与阶段 4（上传页）功能稳定后再统一上样式，可减少返工。
 

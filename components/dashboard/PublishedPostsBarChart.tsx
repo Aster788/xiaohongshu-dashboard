@@ -83,10 +83,16 @@ export function PublishedPostsBarChart({
   const uid = useId().replace(/:/g, "");
   const shadowId = `publishedBarShadow-${uid}`;
   const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const rows = useMemo(() => aggregateMonthly(data), [data]);
 
   useEffect(() => {
     setMounted(true);
+    const mql = window.matchMedia("(max-width: 760px)");
+    const sync = () => setIsMobile(mql.matches);
+    sync();
+    mql.addEventListener("change", sync);
+    return () => mql.removeEventListener("change", sync);
   }, []);
 
   if (rows.length === 0) {
@@ -102,7 +108,14 @@ export function PublishedPostsBarChart({
       >
         {mounted ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <BarChart data={rows} margin={{ top: 8, right: 20, left: 2, bottom: 12 }}>
+            <BarChart
+              data={rows}
+              margin={
+                isMobile
+                  ? { top: 6, right: 12, left: 0, bottom: 10 }
+                  : { top: 8, right: 20, left: 2, bottom: 12 }
+              }
+            >
               <defs>
                 <filter
                   id={shadowId}
@@ -115,8 +128,8 @@ export function PublishedPostsBarChart({
                     dx="0"
                     dy="1"
                     stdDeviation="1.6"
-                    floodColor="#4338ca"
-                    floodOpacity="0.14"
+                    floodColor="#5b21b6"
+                    floodOpacity="0.16"
                   />
                 </filter>
               </defs>
@@ -136,7 +149,7 @@ export function PublishedPostsBarChart({
               <YAxis
                 tick={axisTickSm}
                 tickFormatter={(v) => Number(v).toLocaleString("en-US")}
-                width={46}
+                width={isMobile ? 38 : 46}
                 domain={[0, "auto"]}
                 allowDecimals={false}
                 padding={{ top: 8, bottom: 5 }}
@@ -144,7 +157,7 @@ export function PublishedPostsBarChart({
                 tickLine={false}
               />
               <Tooltip
-                cursor={{ fill: "rgba(139, 92, 246, 0.14)" }}
+                cursor={{ fill: "rgba(91, 33, 182, 0.12)" }}
                 content={(p) => (
                   <PublishedTooltip
                     active={p.active}

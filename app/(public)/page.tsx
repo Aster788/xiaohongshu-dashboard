@@ -5,13 +5,10 @@ import {
 } from "@/components/dashboard/DashboardTrendTabs";
 import { PerformanceOverviewMetrics } from "@/components/dashboard/PerformanceOverviewMetrics";
 import { DashboardYearFilter } from "@/components/dashboard/DashboardYearFilter";
-import { getDashboardSnapshot } from "@/lib/dashboard/queries";
+import { getDashboardSnapshotCached } from "@/lib/dashboard/queries";
 import type { TopNoteRowDTO, TopNotesSortKey } from "@/lib/dashboard/types";
 import type { Metadata } from "next";
 import Image from "next/image";
-
-/** Year filter and DB snapshot must reflect `?year=` on every request (avoid static cache). */
-export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Xiaohongshu Analytics Dashboard",
@@ -255,7 +252,7 @@ export default async function DashboardPage({
   const sp = await searchParams;
   const yearFilter = parseYearFilter(sp.year);
   const sortKey = parseTopNotesSort(sp.sort);
-  const snap = await getDashboardSnapshot(yearFilter, sortKey);
+  const snap = await getDashboardSnapshotCached(yearFilter, sortKey);
   const followerSubtitle =
     "Follower growth from account creation date to the latest update date.";
   const trendSubtitle = "Data since Feb 15, 2026";
@@ -281,7 +278,7 @@ export default async function DashboardPage({
       valueLabel: "CTR",
       chartAriaLabel: "Cover CTR over the last 30 ingested days.",
       data: snap.coverCtrTrend,
-      note: "Note: CTR = Click-Through Rate(点击率)，CTR = Views(观看量) ÷ Impressions(曝光量) x 100%",
+      note: "Note: CTR = Click-Through Rate(点击率)，CTR = Views ÷ Impression x 100%.",
     },
     {
       key: "published",
@@ -296,20 +293,26 @@ export default async function DashboardPage({
   return (
     <main className="dashboard-shell">
       <section className="dashboard-hero" aria-labelledby="dashboard-title">
-        <div className="dashboard-header">
+        <div className="hero-brand-band">
+          <Image
+            className="hero-brand-logo"
+            src="/caser-logo-01.png"
+            alt="Caser"
+            width={640}
+            height={640}
+            priority
+            sizes="(max-width: 760px) calc(100vw - 2.6rem), 48rem"
+          />
         </div>
-        <div className="hero-stat-block hero-stat-kpi-align">
-          <div className="hero-stat-value">
-            <Image
-              className="hero-stat-logo"
-              src="/caser-logo-01.png"
-              alt="Caser"
-              width={640}
-              height={640}
-              priority
-              sizes="(max-width: 760px) 100vw, min(1200px, 100vw)"
-            />
-          </div>
+        <div className="hero-wave-band">
+          <a
+            className="hero-profile-link"
+            href="https://xhslink.com/m/7wTuTv3kElG"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Click here to visit CASER on Xiaohongshu →
+          </a>
         </div>
         <div className="dashboard-title-block">
           <h1 id="dashboard-title">Xiaohongshu Analytics Dashboard</h1>
@@ -329,19 +332,19 @@ export default async function DashboardPage({
             aria-label="Key performance indicators"
           >
             <div className="kpi-card">
-              <div className="kpi-label">Total followers</div>
+              <div className="kpi-label">total followers</div>
               <div className="kpi-value">{formatInt(snap.kpi.followers)}</div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-label">Total posts</div>
+              <div className="kpi-label">total posts</div>
               <div className="kpi-value">{formatInt(snap.kpi.totalPosts)}</div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-label">Likes &amp; saves</div>
+              <div className="kpi-label">likes &amp; saves</div>
               <div className="kpi-value">{formatInt(snap.kpi.likesAndSaves)}</div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-label">Days since launch</div>
+              <div className="kpi-label">days since launch</div>
               <div className="kpi-value">{formatInt(snap.kpi.daysSinceLaunch)}</div>
             </div>
           </div>
@@ -362,7 +365,7 @@ export default async function DashboardPage({
         />
         <p className="section-footnote">
           <strong>Note:</strong> Due to Xiaohongshu&apos;s official data export
-          policy - which only supports the most recent 30 days - day-by-day
+          policy —— which only supports the most recent 30 days —— day-by-day
           follower data for the period June 15, 2025 to February 14, 2026 is
           unavailable. The chart renders this interval as a straight line and
           does not reflect actual growth during that time.

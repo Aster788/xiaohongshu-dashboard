@@ -95,11 +95,17 @@ export function TrendLineChart({
   const uid = useId().replace(/:/g, "");
   const shadowId = `trendLineShadow-${uid}`;
   const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const rows: Row[] = data;
   const monthTicks = useMemo(() => monthTickDateIsos(data), [data]);
 
   useEffect(() => {
     setMounted(true);
+    const mql = window.matchMedia("(max-width: 760px)");
+    const sync = () => setIsMobile(mql.matches);
+    sync();
+    mql.addEventListener("change", sync);
+    return () => mql.removeEventListener("change", sync);
   }, []);
 
   if (rows.length === 0) {
@@ -117,7 +123,11 @@ export function TrendLineChart({
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart
               data={rows}
-              margin={{ top: 8, right: 20, left: 2, bottom: 12 }}
+              margin={
+                isMobile
+                  ? { top: 6, right: 12, left: 0, bottom: 10 }
+                  : { top: 8, right: 20, left: 2, bottom: 12 }
+              }
             >
               <defs>
                 <filter
@@ -131,8 +141,8 @@ export function TrendLineChart({
                     dx="0"
                     dy="1"
                     stdDeviation="1.6"
-                    floodColor="#4338ca"
-                    floodOpacity="0.16"
+                    floodColor="#5b21b6"
+                    floodOpacity="0.18"
                   />
                 </filter>
               </defs>
@@ -155,7 +165,7 @@ export function TrendLineChart({
               <YAxis
                 tick={axisTickSm}
                 tickFormatter={(v) => Number(v).toLocaleString("en-US")}
-                width={46}
+                width={isMobile ? 38 : 46}
                 domain={[0, "auto"]}
                 padding={{ top: 8, bottom: 5 }}
                 axisLine={false}

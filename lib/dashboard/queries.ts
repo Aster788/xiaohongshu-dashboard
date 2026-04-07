@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import type {
   DashboardSnapshotDTO,
@@ -10,6 +11,7 @@ import type {
 } from "./types";
 
 const BURST_NET_THRESHOLD = 15;
+export const DASHBOARD_CACHE_TAG = "dashboard-snapshot";
 
 const METRIC_PREFIX = {
   netFollower: "follower.net_trend.",
@@ -61,17 +63,30 @@ function utcCalendarDaysBetween(a: Date, b: Date): number {
   return Math.round((ub - ua) / 86_400_000);
 }
 
-async function sumByDatePrefix(prefix: string): Promise<Map<string, number>> {
+async function sumByDatePrefixes(
+  prefixes: readonly string[],
+): Promise<Record<string, Map<string, number>>> {
+  const out: Record<string, Map<string, number>> = {};
+  for (const prefix of prefixes) {
+    out[prefix] = new Map<string, number>();
+  }
+  if (prefixes.length === 0) return out;
+
   const rows = await prisma.accountDaily.findMany({
-    where: { metricKey: { startsWith: prefix } },
+    where: {
+      OR: prefixes.map((prefix) => ({ metricKey: { startsWith: prefix } })),
+    },
     orderBy: [{ date: "asc" }, { metricKey: "asc" }],
   });
-  const map = new Map<string, number>();
+
   for (const r of rows) {
-    const k = toIsoDateUTC(r.date);
-    map.set(k, (map.get(k) ?? 0) + Number(r.value));
+    const prefix = prefixes.find((p) => r.metricKey.startsWith(p));
+    if (!prefix) continue;
+    const map = out[prefix]!;
+    const dateIso = toIsoDateUTC(r.date);
+    map.set(dateIso, (map.get(dateIso) ?? 0) + Number(r.value));
   }
-  return map;
+  return out;
 }
 
 /**
@@ -208,14 +223,14 @@ function buildPerformanceOverviewMetrics(args: {
 
   if (!anchorIso) {
     return [
-      empty("impressions", "曝光", "Impressions"),
-      empty("views", "观看", "Views"),
-      empty("cover-ctr", "封面点击率", "Cover CTR"),
-      empty("avg-watch-duration", "平均观看时长", "Avg watch duration"),
-      empty("likes", "点赞", "Likes"),
-      empty("saves", "收藏", "Saves"),
-      empty("net-followers", "净涨粉", "Net followers"),
-      empty("profile-conv-rate", "主页转粉率", "Profile conv. rate"),
+      empty("impressions", "曝光量", "impressions"),
+      empty("views", "观看量", "views"),
+      empty("cover-ctr", "封面点击率", "cover ctr"),
+      empty("avg-watch-duration", "平均观看时长", "avg watch duration"),
+      empty("likes", "点赞量", "likes"),
+      empty("saves", "收藏量", "saves"),
+      empty("net-followers", "净涨粉", "net followers"),
+      empty("profile-conv-rate", "主页转粉率", "profile conversion rate"),
     ];
   }
 
@@ -245,39 +260,39 @@ function buildPerformanceOverviewMetrics(args: {
   return [
     makePerformanceMetric(
       "impressions",
-      "曝光",
-      "Impressions",
+      "曝光量",
+      "impressions",
       impressions.current,
       impressions.prior,
     ),
-    makePerformanceMetric("views", "观看", "Views", views.current, views.prior),
+    makePerformanceMetric("views", "观看量", "views", views.current, views.prior),
     makePerformanceMetric(
       "cover-ctr",
       "封面点击率",
-      "Cover CTR",
+      "cover ctr",
       coverCtr.current,
       coverCtr.prior,
     ),
     makePerformanceMetric(
       "avg-watch-duration",
       "平均观看时长",
-      "Avg watch duration",
+      "avg watch duration",
       avgWatchDuration.current,
       avgWatchDuration.prior,
     ),
-    makePerformanceMetric("likes", "点赞", "Likes", likes.current, likes.prior),
-    makePerformanceMetric("saves", "收藏", "Saves", saves.current, saves.prior),
+    makePerformanceMetric("likes", "点赞量", "likes", likes.current, likes.prior),
+    makePerformanceMetric("saves", "收藏量", "saves", saves.current, saves.prior),
     makePerformanceMetric(
       "net-followers",
       "净涨粉",
-      "Net followers",
+      "net followers",
       netFollowers.current,
       netFollowers.prior,
     ),
     makePerformanceMetric(
       "profile-conv-rate",
       "主页转粉率",
-      "Profile conv. rate",
+      "profile conversion rate",
       profileConvRate.current,
       profileConvRate.prior,
     ),
@@ -492,8 +507,24 @@ export async function getDashboardSnapshot(
   yearFilter: number | null,
   sortKey: TopNotesSortKey,
 ): Promise<DashboardSnapshotDTO> {
+  const [
+    settingsRow,
+    metricMapsByPrefix,
+    yearRows,
+    topNotes,
+  ] = await Promise.all([
+    prisma.settings.findUnique({ where: { id: 1 } }),
+    sumByDatePrefixes(Object.values(METRIC_PREFIX)),
+    prisma.$queryRaw<{ y: number }[]>`
+      SELECT DISTINCT EXTRACT(YEAR FROM published_date)::int AS y
+      FROM notes
+      ORDER BY y DESC
+    `,
+    getTopNotes(yearFilter, sortKey),
+  ]);
+
   const settings =
-    (await prisma.settings.findUnique({ where: { id: 1 } })) ??
+    settingsRow ??
     ({
       followers: 0,
       totalPosts: 0,
@@ -501,39 +532,19 @@ export async function getDashboardSnapshot(
       launchDate: new Date(Date.UTC(2025, 5, 15)),
     } as const);
 
-  const [
-    netTrendMap,
-    newFollowsMap,
-    unfollowsMap,
-    coverMap,
-    impressionsMap,
-    likesMap,
-    savesMap,
-    viewsMap,
-    avgWatchDurationMap,
-    profileConvRateMap,
-    publishMap,
-    yearRows,
-    topNotes,
-  ] = await Promise.all([
-      sumByDatePrefix(METRIC_PREFIX.netFollower),
-      sumByDatePrefix(METRIC_PREFIX.newFollows),
-      sumByDatePrefix(METRIC_PREFIX.unfollows),
-      sumByDatePrefix(METRIC_PREFIX.coverCtr),
-      sumByDatePrefix(METRIC_PREFIX.impressions),
-      sumByDatePrefix(METRIC_PREFIX.likes),
-      sumByDatePrefix(METRIC_PREFIX.saves),
-      sumByDatePrefix(METRIC_PREFIX.views),
-      sumByDatePrefix(METRIC_PREFIX.avgWatchDuration),
-      sumByDatePrefix(METRIC_PREFIX.profileConvRate),
-      sumByDatePrefix(METRIC_PREFIX.publishTotal),
-      prisma.$queryRaw<{ y: number }[]>`
-        SELECT DISTINCT EXTRACT(YEAR FROM published_date)::int AS y
-        FROM notes
-        ORDER BY y DESC
-      `,
-      getTopNotes(yearFilter, sortKey),
-    ]);
+  const netTrendMap = metricMapsByPrefix[METRIC_PREFIX.netFollower] ?? new Map<string, number>();
+  const newFollowsMap = metricMapsByPrefix[METRIC_PREFIX.newFollows] ?? new Map<string, number>();
+  const unfollowsMap = metricMapsByPrefix[METRIC_PREFIX.unfollows] ?? new Map<string, number>();
+  const coverMap = metricMapsByPrefix[METRIC_PREFIX.coverCtr] ?? new Map<string, number>();
+  const impressionsMap = metricMapsByPrefix[METRIC_PREFIX.impressions] ?? new Map<string, number>();
+  const likesMap = metricMapsByPrefix[METRIC_PREFIX.likes] ?? new Map<string, number>();
+  const savesMap = metricMapsByPrefix[METRIC_PREFIX.saves] ?? new Map<string, number>();
+  const viewsMap = metricMapsByPrefix[METRIC_PREFIX.views] ?? new Map<string, number>();
+  const avgWatchDurationMap =
+    metricMapsByPrefix[METRIC_PREFIX.avgWatchDuration] ?? new Map<string, number>();
+  const profileConvRateMap =
+    metricMapsByPrefix[METRIC_PREFIX.profileConvRate] ?? new Map<string, number>();
+  const publishMap = metricMapsByPrefix[METRIC_PREFIX.publishTotal] ?? new Map<string, number>();
 
   const netByDate = mergeNetFollowerByDate(
     netTrendMap,
@@ -580,4 +591,17 @@ export async function getDashboardSnapshot(
     years,
     topNotes: topNotes.map(mapTopNoteRow),
   };
+}
+
+export async function getDashboardSnapshotCached(
+  yearFilter: number | null,
+  sortKey: TopNotesSortKey,
+): Promise<DashboardSnapshotDTO> {
+  const cacheKey = `${yearFilter ?? "all"}:${sortKey}`;
+  const cached = unstable_cache(
+    () => getDashboardSnapshot(yearFilter, sortKey),
+    ["dashboard-snapshot", cacheKey],
+    { revalidate: 120, tags: [DASHBOARD_CACHE_TAG] },
+  );
+  return cached();
 }

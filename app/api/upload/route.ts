@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
 import { combineDomainIngests, ingestDomainFromXlsxBuffer } from "@/lib/excel/domainWorkbook";
 import type { DomainWorkbookResult } from "@/lib/excel/domainTypes";
 import { prisma } from "@/lib/db";
+import { DASHBOARD_CACHE_TAG } from "@/lib/dashboard/queries";
 import { mergeDomainIntoDb } from "@/lib/merge/mergeIngest";
 import { parseOptionalKpiFormFields } from "@/lib/settings/formKpi";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /**
  * Persists ingested rows to PostgreSQL. For raw grid preview only, use POST /api/excel/parse (same Bearer / form secret).
@@ -124,6 +127,8 @@ export async function POST(request: Request) {
       update: patch,
     });
   }
+
+  revalidateTag(DASHBOARD_CACHE_TAG);
 
   return NextResponse.json({
     inserted: mergeResult.inserted,
