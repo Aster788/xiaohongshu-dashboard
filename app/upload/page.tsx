@@ -555,8 +555,9 @@ export default function UploadPage() {
       headers.Authorization = `Bearer ${secret}`;
     }
 
+    const uploadBatchId = crypto.randomUUID();
+
     try {
-      const uploadBatchId = crypto.randomUUID();
       const sources = await mapWithConcurrency(files, 3, async (file, index) => {
         const blobPath = buildUploadBlobPath({
           runId: uploadBatchId,
