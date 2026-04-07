@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { memo, useId, useMemo } from "react";
 import type { TrendPointDTO } from "@/lib/dashboard/types";
 import {
   Bar,
@@ -73,27 +73,20 @@ function PublishedTooltip(props: {
 
 const axisTickSm = { fill: "var(--caser-chart-axis)", fontSize: 10 };
 
-export function PublishedPostsBarChart({
+function PublishedPostsBarChartComponent({
   data,
   chartAriaLabel,
+  isMobileViewport,
+  isReady,
 }: {
   data: TrendPointDTO[];
   chartAriaLabel: string;
+  isMobileViewport: boolean;
+  isReady: boolean;
 }) {
   const uid = useId().replace(/:/g, "");
   const shadowId = `publishedBarShadow-${uid}`;
-  const [mounted, setMounted] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const rows = useMemo(() => aggregateMonthly(data), [data]);
-
-  useEffect(() => {
-    setMounted(true);
-    const mql = window.matchMedia("(max-width: 760px)");
-    const sync = () => setIsMobile(mql.matches);
-    sync();
-    mql.addEventListener("change", sync);
-    return () => mql.removeEventListener("change", sync);
-  }, []);
 
   if (rows.length === 0) {
     return <p className="empty-hint subtle">No rows for this metric yet.</p>;
@@ -106,12 +99,12 @@ export function PublishedPostsBarChart({
         style={{ width: "100%", minWidth: 0 }}
         aria-hidden="true"
       >
-        {mounted ? (
+        {isReady ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <BarChart
               data={rows}
               margin={
-                isMobile
+                isMobileViewport
                   ? { top: 6, right: 12, left: 0, bottom: 10 }
                   : { top: 8, right: 20, left: 2, bottom: 12 }
               }
@@ -149,7 +142,7 @@ export function PublishedPostsBarChart({
               <YAxis
                 tick={axisTickSm}
                 tickFormatter={(v) => Number(v).toLocaleString("en-US")}
-                width={isMobile ? 38 : 46}
+                width={isMobileViewport ? 38 : 46}
                 domain={[0, "auto"]}
                 allowDecimals={false}
                 padding={{ top: 8, bottom: 5 }}
@@ -184,3 +177,5 @@ export function PublishedPostsBarChart({
     </div>
   );
 }
+
+export const PublishedPostsBarChart = memo(PublishedPostsBarChartComponent);

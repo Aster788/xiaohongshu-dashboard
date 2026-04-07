@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { memo, useId, useMemo } from "react";
 import type { TrendPointDTO } from "@/lib/dashboard/types";
 import {
   CartesianGrid,
@@ -83,30 +83,23 @@ function TrendTooltip(
 
 const axisTickSm = { fill: "var(--caser-chart-axis)", fontSize: 10 };
 
-export function TrendLineChart({
+function TrendLineChartComponent({
   data,
   valueLabel,
   chartAriaLabel,
+  isMobileViewport,
+  isReady,
 }: {
   data: TrendPointDTO[];
   valueLabel: string;
   chartAriaLabel: string;
+  isMobileViewport: boolean;
+  isReady: boolean;
 }) {
   const uid = useId().replace(/:/g, "");
   const shadowId = `trendLineShadow-${uid}`;
-  const [mounted, setMounted] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const rows: Row[] = data;
   const monthTicks = useMemo(() => monthTickDateIsos(data), [data]);
-
-  useEffect(() => {
-    setMounted(true);
-    const mql = window.matchMedia("(max-width: 760px)");
-    const sync = () => setIsMobile(mql.matches);
-    sync();
-    mql.addEventListener("change", sync);
-    return () => mql.removeEventListener("change", sync);
-  }, []);
 
   if (rows.length === 0) {
     return <p className="empty-hint subtle">No rows for this metric yet.</p>;
@@ -119,12 +112,12 @@ export function TrendLineChart({
         style={{ width: "100%", minWidth: 0 }}
         aria-hidden="true"
       >
-        {mounted ? (
+        {isReady ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <LineChart
               data={rows}
               margin={
-                isMobile
+                isMobileViewport
                   ? { top: 6, right: 12, left: 0, bottom: 10 }
                   : { top: 8, right: 20, left: 2, bottom: 12 }
               }
@@ -165,7 +158,7 @@ export function TrendLineChart({
               <YAxis
                 tick={axisTickSm}
                 tickFormatter={(v) => Number(v).toLocaleString("en-US")}
-                width={isMobile ? 38 : 46}
+                width={isMobileViewport ? 38 : 46}
                 domain={[0, "auto"]}
                 padding={{ top: 8, bottom: 5 }}
                 axisLine={false}
@@ -207,3 +200,5 @@ export function TrendLineChart({
     </div>
   );
 }
+
+export const TrendLineChart = memo(TrendLineChartComponent);

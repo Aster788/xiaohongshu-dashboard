@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { TrendPointDTO } from "@/lib/dashboard/types";
 import { PublishedPostsBarChart } from "./PublishedPostsBarChart";
 import { TrendLineChart } from "./TrendLineChart";
@@ -20,13 +20,21 @@ export type TrendTab = {
 
 export function DashboardTrendTabs({ tabs }: { tabs: TrendTab[] }) {
   const [activeKey, setActiveKey] = useState(tabs[0]?.key ?? "");
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isChartReady, setIsChartReady] = useState(false);
   const active = tabs.find((tab) => tab.key === activeKey) ?? tabs[0] ?? null;
   const coverCtrNote = tabs.find((tab) => tab.key === "cover-ctr")?.note ?? null;
 
   if (!active) return null;
 
-  const panelId = `trend-panel-${active.key}`;
-  const panelNote = active.key === "cover-ctr" ? null : active.note;
+  useEffect(() => {
+    setIsChartReady(true);
+    const mql = window.matchMedia("(max-width: 760px)");
+    const sync = () => setIsMobileViewport(mql.matches);
+    sync();
+    mql.addEventListener("change", sync);
+    return () => mql.removeEventListener("change", sync);
+  }, []);
 
   function renderNoteBody(body: string): ReactNode {
     const matches = [...body.matchAll(CTR_NOTE_DIVISOR)];
@@ -87,29 +95,45 @@ export function DashboardTrendTabs({ tabs }: { tabs: TrendTab[] }) {
       </div>
 
       <div
-        id={panelId}
-        className="trend-panel"
-        role="tabpanel"
-        aria-labelledby={`trend-tab-${active.key}`}
+        className="trend-panels"
       >
-        {active.chartType === "monthlyBar" ? (
-          <PublishedPostsBarChart
-            data={active.data}
-            chartAriaLabel={active.chartAriaLabel}
-          />
-        ) : (
-          <TrendLineChart
-            data={active.data}
-            valueLabel={active.valueLabel}
-            chartAriaLabel={active.chartAriaLabel}
-          />
-        )}
+        {tabs.map((tab) => {
+          const isActive = tab.key === active.key;
+          const panelNote = tab.key === "cover-ctr" ? null : tab.note;
+          return (
+            <div
+              key={tab.key}
+              id={`trend-panel-${tab.key}`}
+              className="trend-panel"
+              role="tabpanel"
+              aria-labelledby={`trend-tab-${tab.key}`}
+              hidden={!isActive}
+            >
+              {tab.chartType === "monthlyBar" ? (
+                <PublishedPostsBarChart
+                  data={tab.data}
+                  chartAriaLabel={tab.chartAriaLabel}
+                  isMobileViewport={isMobileViewport}
+                  isReady={isChartReady}
+                />
+              ) : (
+                <TrendLineChart
+                  data={tab.data}
+                  valueLabel={tab.valueLabel}
+                  chartAriaLabel={tab.chartAriaLabel}
+                  isMobileViewport={isMobileViewport}
+                  isReady={isChartReady}
+                />
+              )}
 
-        {panelNote ? <p className="section-footnote">{renderNote(panelNote)}</p> : null}
+              {panelNote ? <p className="section-footnote">{renderNote(panelNote)}</p> : null}
 
-        {coverCtrNote && active.key === "cover-ctr" ? (
-          <p className="section-footnote">{renderNote(coverCtrNote)}</p>
-        ) : null}
+              {coverCtrNote && tab.key === "cover-ctr" ? (
+                <p className="section-footnote">{renderNote(coverCtrNote)}</p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
