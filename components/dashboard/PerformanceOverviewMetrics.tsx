@@ -29,8 +29,8 @@ function formatPctChange(metric: PerformanceOverviewMetricDTO): string {
 }
 
 function deltaIconForTrend(trend: PerformanceOverviewMetricDTO["trend"]): string {
-  if (trend === "up") return "↑";
-  if (trend === "down") return "↓";
+  if (trend === "up") return "▲";
+  if (trend === "down") return "▼";
   return "•";
 }
 
@@ -49,7 +49,7 @@ function resolveComparisonDisplay(
   const mockUp = index % 2 === 0;
   return {
     cardTrend: mockUp ? "up" : "down",
-    icon: mockUp ? "↑" : "↓",
+    icon: mockUp ? "▲" : "▼",
     valueText: mockUp ? `+${MOCK_COMPARISON_PCT}%` : `-${MOCK_COMPARISON_PCT}%`,
   };
 }

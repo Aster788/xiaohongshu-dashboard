@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import type {
@@ -415,103 +414,35 @@ function mapTopNoteRow(n: {
   };
 }
 
-function likesAndSavesOrderExpr() {
-  return Prisma.sql`(COALESCE(likes, 0) + COALESCE(saves, 0))`;
-}
-
-function fallbackTopNotesOrderSql() {
-  return Prisma.sql`
-    published_date DESC,
-    views DESC NULLS LAST,
-    impressions DESC NULLS LAST,
-    ${likesAndSavesOrderExpr()} DESC,
-    follower_gain DESC NULLS LAST
-  `;
-}
-
-function topNotesOrderBySql(sortKey: TopNotesSortKey) {
-  switch (sortKey) {
-    case "impressions":
-      return Prisma.sql`
-        ORDER BY impressions DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
-      `;
-    case "likes-saves":
-      return Prisma.sql`
-        ORDER BY ${likesAndSavesOrderExpr()} DESC, ${fallbackTopNotesOrderSql()}
-      `;
-    case "shares":
-      return Prisma.sql`
-        ORDER BY shares DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
-      `;
-    case "new-followers":
-      return Prisma.sql`
-        ORDER BY follower_gain DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
-      `;
-    case "views":
-    default:
-      return Prisma.sql`
-        ORDER BY views DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
-      `;
-  }
-}
-
-async function getTopNotes(
-  yearFilter: number | null,
-  sortKey: TopNotesSortKey,
-) {
-  const yearWhere =
-    yearFilter !== null
-      ? Prisma.sql`
-          WHERE published_date >= ${new Date(Date.UTC(yearFilter, 0, 1))}
-            AND published_date < ${new Date(Date.UTC(yearFilter + 1, 0, 1))}
-        `
-      : Prisma.empty;
-
-  return prisma.$queryRaw<
-    Array<{
-      id: string;
-      title: string;
-      format: string | null;
-      publishedDate: Date;
-      impressions: bigint | null;
-      views: number | null;
-      likes: number | null;
-      comments: number | null;
-      saves: number | null;
-      shares: number | null;
-      followerGain: number | null;
-      postUrl: string | null;
-    }>
-  >(Prisma.sql`
-    SELECT
-      id,
-      title,
-      format,
-      published_date AS "publishedDate",
-      impressions,
-      views,
-      likes,
-      comments,
-      saves,
-      shares,
-      follower_gain AS "followerGain",
-      post_url AS "postUrl"
-    FROM notes
-    ${yearWhere}
-    ${topNotesOrderBySql(sortKey)}
-    LIMIT 10
-  `);
+async function getAllTopNoteCandidates() {
+  return prisma.note.findMany({
+    select: {
+      id: true,
+      title: true,
+      format: true,
+      publishedDate: true,
+      impressions: true,
+      views: true,
+      likes: true,
+      comments: true,
+      saves: true,
+      shares: true,
+      followerGain: true,
+      postUrl: true,
+    },
+    orderBy: { publishedDate: "desc" },
+  });
 }
 
 export async function getDashboardSnapshot(
-  yearFilter: number | null,
-  sortKey: TopNotesSortKey,
+  _yearFilter: number | null,
+  _sortKey: TopNotesSortKey,
 ): Promise<DashboardSnapshotDTO> {
   const [
     settingsRow,
     metricMapsByPrefix,
     yearRows,
-    topNotes,
+    allTopNoteCandidates,
   ] = await Promise.all([
     prisma.settings.findUnique({ where: { id: 1 } }),
     sumByDatePrefixes(Object.values(METRIC_PREFIX)),
@@ -520,7 +451,7 @@ export async function getDashboardSnapshot(
       FROM notes
       ORDER BY y DESC
     `,
-    getTopNotes(yearFilter, sortKey),
+    getAllTopNoteCandidates(),
   ]);
 
   const settings =
@@ -589,7 +520,7 @@ export async function getDashboardSnapshot(
     viewsTrend: last30DayPoints(viewsMap),
     publishTrend: last30DayPoints(publishMap),
     years,
-    topNotes: topNotes.map(mapTopNoteRow),
+    topNotesAll: allTopNoteCandidates.map(mapTopNoteRow),
   };
 }
 

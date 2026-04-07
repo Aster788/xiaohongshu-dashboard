@@ -21,14 +21,19 @@ export function DashboardYearFilter({
   years,
   selectedYear,
   selectedSort,
+  onYearChange,
+  onSortChange,
 }: {
   years: number[];
   selectedYear: number | null;
   selectedSort: TopNotesSortKey;
+  onYearChange?: (year: number | null) => void;
+  onSortChange?: (sort: TopNotesSortKey) => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const prefetchedHrefsRef = useRef<Set<string>>(new Set());
   const [sortOpen, setSortOpen] = useState(false);
   const selectedNum =
     selectedYear == null ? null : Number(selectedYear);
@@ -47,8 +52,18 @@ export function DashboardYearFilter({
     return qs ? `${pathname}?${qs}` : pathname;
   }
 
+  function prefetchHref(href: string) {
+    if (prefetchedHrefsRef.current.has(href)) return;
+    prefetchedHrefsRef.current.add(href);
+    router.prefetch(href);
+  }
+
   function handleSortSelect(nextSort: TopNotesSortKey) {
     setSortOpen(false);
+    if (onSortChange) {
+      onSortChange(nextSort);
+      return;
+    }
     router.push(createHref(selectedNum, nextSort), { scroll: false });
   }
 
@@ -73,30 +88,63 @@ export function DashboardYearFilter({
     };
   }, []);
 
+  useEffect(() => {
+    if (onYearChange || onSortChange) return;
+    prefetchHref(createHref(null, selectedSort));
+    for (const year of years) {
+      prefetchHref(createHref(Number(year), selectedSort));
+    }
+    for (const option of SORT_OPTIONS) {
+      prefetchHref(createHref(selectedNum, option.value));
+    }
+  }, [onYearChange, onSortChange, selectedNum, selectedSort, years, pathname]);
+
   return (
     <div className="top-filter-bar">
       <nav className="year-filter" aria-label="Filter top notes by year">
-        <Link
-          href={createHref(null, selectedSort)}
-          className={pillClass(selectedNum == null)}
-          prefetch={false}
-          scroll={false}
-        >
-          All
-        </Link>
+        {onYearChange ? (
+          <button
+            type="button"
+            className={pillClass(selectedNum == null)}
+            onClick={() => onYearChange(null)}
+          >
+            All
+          </button>
+        ) : (
+          <Link
+            href={createHref(null, selectedSort)}
+            className={pillClass(selectedNum == null)}
+            scroll={false}
+            onMouseEnter={() => prefetchHref(createHref(null, selectedSort))}
+          >
+            All
+          </Link>
+        )}
         {years.map((y) => {
           const yNum = Number(y);
+          const active =
+            selectedNum != null &&
+            Number.isInteger(selectedNum) &&
+            selectedNum === yNum;
+          if (onYearChange) {
+            return (
+              <button
+                key={yNum}
+                type="button"
+                className={pillClass(active)}
+                onClick={() => onYearChange(yNum)}
+              >
+                {yNum}
+              </button>
+            );
+          }
           return (
             <Link
               key={yNum}
               href={createHref(yNum, selectedSort)}
-              className={pillClass(
-                selectedNum != null &&
-                  Number.isInteger(selectedNum) &&
-                  selectedNum === yNum,
-              )}
-              prefetch={false}
+              className={pillClass(active)}
               scroll={false}
+              onMouseEnter={() => prefetchHref(createHref(yNum, selectedSort))}
             >
               {yNum}
             </Link>
@@ -142,6 +190,9 @@ export function DashboardYearFilter({
                   role="option"
                   aria-selected={active}
                   className={active ? "sort-filter-option active" : "sort-filter-option"}
+                  onMouseEnter={() => {
+                    if (!onSortChange) prefetchHref(createHref(selectedNum, option.value));
+                  }}
                   onClick={() => handleSortSelect(option.value)}
                 >
                   {option.label}

@@ -8,3 +8,6 @@ npm-debug.log*
 
 # Cursor session debug logs (do not commit)
 .cursor/debug*.log
+
+# Local exported Xiaohongshu data files
+/caser-xiaohongshu-data/**/*.xlsx

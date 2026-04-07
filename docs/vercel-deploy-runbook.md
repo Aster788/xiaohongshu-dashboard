@@ -67,7 +67,7 @@ If uploads time out in production, split large imports into smaller files before
 1. Push the branch and create a Vercel deployment.
 2. Confirm `DATABASE_URL` and `UPLOAD_SECRET` are set for the target environment.
 3. Run Prisma migrations against production:
-   - `npx prisma migrate deploy`
+  - `npx prisma migrate deploy`
 4. Redeploy if needed so the app starts against the latest schema and env values.
 5. Run the smoke tests below.
 
@@ -148,8 +148,8 @@ Use extra caution here. Do not run destructive resets in production.
 2. Check migration state with `npx prisma migrate status`.
 3. If the issue is app/schema mismatch, restore app compatibility first by rolling back the app.
 4. If the migration itself is the problem, use your Neon recovery process before changing data:
-   - restore from a known-good backup / recovery point, or
-   - create a recovery branch from a healthy state and validate there first
+  - restore from a known-good backup / recovery point, or
+  - create a recovery branch from a healthy state and validate there first
 5. Redeploy and repeat the smoke tests.
 
 ## 8) Local-to-production parity notes
@@ -157,3 +157,4 @@ Use extra caution here. Do not run destructive resets in production.
 - Local app runtime usually uses `.env.local`.
 - `npm run db:*` commands load the same development env file set via `dotenv -c development`.
 - This repo currently documents and supports only `DATABASE_URL` + `UPLOAD_SECRET` for deployment parity.
+

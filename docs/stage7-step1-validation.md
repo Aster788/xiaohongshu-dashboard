@@ -13,13 +13,13 @@
 
 ## 已完成项
 
-- [x] 新增 `--caser-accent-strong`，统一章节强调色与 badge
-- [x] Tabs / Year pills / Sort dropdown 激活态统一到品牌紫 token
-- [x] Hero 装饰渐变改为紫色系（移除偏青色倾向）
-- [x] 布局宽度计算由 `100vw` 改为 `100%` 路径，降低横向溢出风险
-- [x] 根容器加入 `overflow-x: clip`
-- [x] 760px 断点下优化筛选区宽度与间距
-- [x] 新增 420px 超窄屏断点，调小图表高度与卡片 padding
+- 新增 `--caser-accent-strong`，统一章节强调色与 badge
+- Tabs / Year pills / Sort dropdown 激活态统一到品牌紫 token
+- Hero 装饰渐变改为紫色系（移除偏青色倾向）
+- 布局宽度计算由 `100vw` 改为 `100%` 路径，降低横向溢出风险
+- 根容器加入 `overflow-x: clip`
+- 760px 断点下优化筛选区宽度与间距
+- 新增 420px 超窄屏断点，调小图表高度与卡片 padding
 
 ## 本地验证记录
 
@@ -37,18 +37,18 @@
 
 ## 浏览器实测补充（建议但不阻塞本次结项）
 
-- [ ] 桌面 Chrome：1440 / 1920 两个宽度截图留档
-- [ ] 桌面 Edge：关键模块（Hero、图表、Top 10）截图留档
-- [ ] iOS Safari：390px 宽度完整滚动检查
-- [ ] Android Chrome：360px 宽度完整滚动检查
+- 桌面 Chrome：1440 / 1920 两个宽度截图留档
+- 桌面 Edge：关键模块（Hero、图表、Top 10）截图留档
+- iOS Safari：390px 宽度完整滚动检查
+- Android Chrome：360px 宽度完整滚动检查
 
 ## 结项判定
 
-- [x] `docs/stage7-visual-checklist.md` 已落地，作为统一验收口径
-- [x] 主题与小屏兼容核心改动已完成（`app/globals.css`）
-- [x] Logo 运行路径与资源位置一致（`/caser-logo-01.png` -> `public/caser-logo-01.png`）
-- [x] 样式文件未检出历史偏蓝紫色硬编码（关键词回归检查通过）
-- [x] 本轮可判定为「Step 1 完成」，后续仅补充跨浏览器截图留档
+- `docs/stage7-visual-checklist.md` 已落地，作为统一验收口径
+- 主题与小屏兼容核心改动已完成（`app/globals.css`）
+- Logo 运行路径与资源位置一致（`/caser-logo-01.png` -> `public/caser-logo-01.png`）
+- 样式文件未检出历史偏蓝紫色硬编码（关键词回归检查通过）
+- 本轮可判定为「Step 1 完成」，后续仅补充跨浏览器截图留档
 
 ## 风险与处理
 

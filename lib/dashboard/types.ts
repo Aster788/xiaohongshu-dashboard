@@ -91,5 +91,5 @@ export type DashboardSnapshotDTO = {
   viewsTrend: TrendPointDTO[];
   publishTrend: TrendPointDTO[];
   years: number[];
-  topNotes: TopNoteRowDTO[];
+  topNotesAll: TopNoteRowDTO[];
 };
