@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import type { DomainWorkbookResult, ParsedAccountDailyRow, ParsedNoteRow } from "@/lib/excel/domainTypes";
 import type { MergeIngestResult, TableMergeStats } from "./mergeStats";
 
@@ -119,6 +120,7 @@ async function bulkUpsertNotes(
     const slice = rows.slice(i, i + UPSERT_BATCH);
     const values = slice.map(
       (n) => Prisma.sql`(
+        ${randomUUID()},
         ${n.title},
         ${n.publishedDate},
         ${n.format},
@@ -135,6 +137,7 @@ async function bulkUpsertNotes(
     await tx.$executeRaw(
       Prisma.sql`
         INSERT INTO notes (
+          id,
           title,
           published_date,
           format,
@@ -170,12 +173,12 @@ async function bulkUpsertDaily(
     const slice = rows.slice(i, i + UPSERT_BATCH);
     const values = slice.map((r) => {
       const dec = new Prisma.Decimal(String(r.value));
-      return Prisma.sql`(${r.date}, ${r.metricKey}, ${dec})`;
+      return Prisma.sql`(${randomUUID()}, ${r.date}, ${r.metricKey}, ${dec})`;
     });
 
     await tx.$executeRaw(
       Prisma.sql`
-        INSERT INTO account_daily (date, metric_key, value)
+        INSERT INTO account_daily (id, date, metric_key, value)
         VALUES ${Prisma.join(values, ", ")}
         ON CONFLICT (date, metric_key) DO UPDATE SET
           value = EXCLUDED.value,

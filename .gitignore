@@ -10,4 +10,4 @@ npm-debug.log*
 .cursor/debug*.log
 
 # Local exported Xiaohongshu data files
-/caser-xiaohongshu-data/**/*.xlsx
+/caser-xiaohongshu-data
