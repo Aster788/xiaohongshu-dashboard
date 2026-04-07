@@ -9,9 +9,12 @@
  *   burst when daily net ≥ 15.
  * - Trend mini-charts: last 30 calendar days ending at latest ingested date, summing keys
  *   `view.cover_ctr.*`, merged `engage.likes_trend.*` + `engage.saves_trend.*` (likes & saves),
- *   and `view.views_trend.*`.
- * - Top notes: `Note` ordered by `views desc nulls last`, cap 10; optional `year` filter on
- *   `publishedDate`; `years` = distinct calendar years present in `notes`.
+ *   `view.views_trend.*`, and `publish.total_trend.*`.
+ * - Top notes: `Note` ordered by selected sort (`views`, `impressions`, `likes & saves`,
+ *   `shares`, `new followers`) with tie-breakers `publishedDate desc` → `views` →
+ *   `impressions` → `likes + saves` → `followerGain`, cap 10; optional `year` filter on
+ *   `publishedDate`; includes optional per-post `followerGain`; `years` = distinct calendar
+ *   years present in `notes`.
  */
 
 export type DashboardKpiDTO = {
@@ -36,6 +39,33 @@ export type TrendPointDTO = {
   value: number;
 };
 
+export type PerformanceOverviewMetricKind =
+  | "impressions"
+  | "views"
+  | "cover-ctr"
+  | "avg-watch-duration"
+  | "likes"
+  | "saves"
+  | "net-followers"
+  | "profile-conv-rate";
+
+export type PerformanceOverviewMetricDTO = {
+  kind: PerformanceOverviewMetricKind;
+  labelZh: string;
+  labelEn: string;
+  current: number | null;
+  prior: number | null;
+  pctChange: number | null;
+  trend: "up" | "down" | "flat";
+};
+
+export type TopNotesSortKey =
+  | "views"
+  | "impressions"
+  | "likes-saves"
+  | "shares"
+  | "new-followers";
+
 export type TopNoteRowDTO = {
   id: string;
   title: string;
@@ -47,16 +77,19 @@ export type TopNoteRowDTO = {
   comments: number | null;
   saves: number | null;
   shares: number | null;
+  followerGain: number | null;
   postUrl: string | null;
 };
 
 export type DashboardSnapshotDTO = {
   kpi: DashboardKpiDTO;
+  performanceOverview: PerformanceOverviewMetricDTO[];
   followerPoints: FollowerPointDTO[];
   coverCtrTrend: TrendPointDTO[];
   /** Daily likes + saves from ingested trend sheets, summed per date. */
   likesAndSavesTrend: TrendPointDTO[];
   viewsTrend: TrendPointDTO[];
+  publishTrend: TrendPointDTO[];
   years: number[];
   topNotes: TopNoteRowDTO[];
 };

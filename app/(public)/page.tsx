@@ -1,8 +1,12 @@
 import { FollowerLineChart } from "@/components/dashboard/FollowerLineChart";
+import {
+  DashboardTrendTabs,
+  type TrendTab,
+} from "@/components/dashboard/DashboardTrendTabs";
+import { PerformanceOverviewMetrics } from "@/components/dashboard/PerformanceOverviewMetrics";
 import { DashboardYearFilter } from "@/components/dashboard/DashboardYearFilter";
-import { TrendLineChart } from "@/components/dashboard/TrendLineChart";
 import { getDashboardSnapshot } from "@/lib/dashboard/queries";
-import type { TopNoteRowDTO } from "@/lib/dashboard/types";
+import type { TopNoteRowDTO, TopNotesSortKey } from "@/lib/dashboard/types";
 import type { Metadata } from "next";
 import Image from "next/image";
 
@@ -24,6 +28,20 @@ function parseYearFilter(raw: string | string[] | undefined): number | null {
   return n;
 }
 
+function parseTopNotesSort(raw: string | string[] | undefined): TopNotesSortKey {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  switch (v) {
+    case "impressions":
+    case "likes-saves":
+    case "shares":
+    case "new-followers":
+      return v;
+    case "views":
+    default:
+      return "views";
+  }
+}
+
 function formatInt(n: number): string {
   return n.toLocaleString("en-US");
 }
@@ -32,6 +50,105 @@ function formatMetricValue(value: number | string | null): string {
   if (value == null) return "—";
   const n = Number(value);
   return Number.isFinite(n) ? n.toLocaleString("en-US") : String(value);
+}
+
+function formatSignedMetricValue(value: number | null): string {
+  if (value == null) return "—";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toLocaleString("en-US")}`;
+}
+
+function formatMetricSum(...values: Array<number | null>): string {
+  const nums = values.filter((value): value is number => value != null);
+  if (nums.length === 0) return "—";
+  return nums.reduce((sum, value) => sum + value, 0).toLocaleString("en-US");
+}
+
+function MetricIcon({
+  kind,
+}: {
+  kind: "views" | "likes" | "saves" | "followers";
+}) {
+  if (kind === "views") {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M1.2 8c1.7-2.9 4-4.4 6.8-4.4S13.1 5.1 14.8 8c-1.7 2.9-4 4.4-6.8 4.4S2.9 10.9 1.2 8Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx="8" cy="8" r="2.15" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    );
+  }
+
+  if (kind === "likes") {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M8 13.3 2.9 8.5A3.2 3.2 0 0 1 7.4 4l.6.6.6-.6a3.2 3.2 0 1 1 4.5 4.5L8 13.3Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  if (kind === "saves") {
+    return (
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M4 2.2h8a1 1 0 0 1 1 1v10.4L8 10.8l-5 2.8V3.2a1 1 0 0 1 1-1Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="6" cy="5.3" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M2.6 12.8c.7-1.9 2.1-2.9 3.4-2.9s2.7 1 3.4 2.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function TopPostMetric({
+  kind,
+  value,
+  label,
+}: {
+  kind: "views" | "likes" | "saves" | "followers";
+  value: string;
+  label: string;
+}) {
+  return (
+    <span className={`top-post-metric-item top-post-metric-${kind}`}>
+      <span className="top-post-metric-icon" aria-hidden="true">
+        <MetricIcon kind={kind} />
+      </span>
+      <span className="top-post-metric-copy">
+        <span className="top-post-metric-value">{value}</span>
+        <span className="top-post-metric-label">{label}</span>
+      </span>
+    </span>
+  );
 }
 
 function formatPublishedDate(isoDate: string): string {
@@ -79,12 +196,19 @@ function TopPostCard({
   return (
     <article className="top-post-card">
       <div className="top-post-rank">{rank}</div>
-      <div className="top-post-metrics" aria-label="Post metrics">
-        <span>{formatMetricValue(row.views)} views</span>
-        <span>{formatMetricValue(row.likes)} likes</span>
-        <span>{formatMetricValue(row.saves)} saves</span>
-      </div>
       <div className="top-post-body">
+        <div className="top-post-meta-row">
+          <p className="top-post-meta">
+            <span className="top-post-format-badge">{row.format ?? "Post"}</span>
+            <time dateTime={row.publishedDateIso} className="top-post-meta-date">
+              {formatPublishedDate(row.publishedDateIso)}
+            </time>
+          </p>
+          <div className="top-post-secondary">
+            <span>Impressions {formatMetricValue(row.impressions)}</span>
+            <span>Shares {formatMetricValue(row.shares)}</span>
+          </div>
+        </div>
         <div className="top-post-title-row">
           <h3>{row.title}</h3>
           {row.postUrl ? (
@@ -101,15 +225,22 @@ function TopPostCard({
             </a>
           ) : null}
         </div>
-        <div className="top-post-meta-row">
-          <p className="top-post-meta">
-            {row.format ?? "Post"} · {formatPublishedDate(row.publishedDateIso)}
-          </p>
-          <div className="top-post-secondary">
-            <span>Impressions {formatMetricValue(row.impressions)}</span>
-            <span>Comments {formatMetricValue(row.comments)}</span>
-            <span>Shares {formatMetricValue(row.shares)}</span>
-          </div>
+        <div className="top-post-metrics" aria-label="Post metrics">
+          <TopPostMetric
+            kind="views"
+            value={formatMetricValue(row.views)}
+            label="views"
+          />
+          <TopPostMetric
+            kind="likes"
+            value={formatMetricSum(row.likes, row.saves)}
+            label="likes & saves"
+          />
+          <TopPostMetric
+            kind="followers"
+            value={formatSignedMetricValue(row.followerGain)}
+            label="followers"
+          />
         </div>
       </div>
     </article>
@@ -119,21 +250,53 @@ function TopPostCard({
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string | string[] }>;
+  searchParams: Promise<{ year?: string | string[]; sort?: string | string[] }>;
 }) {
   const sp = await searchParams;
   const yearFilter = parseYearFilter(sp.year);
-  const snap = await getDashboardSnapshot(yearFilter);
+  const sortKey = parseTopNotesSort(sp.sort);
+  const snap = await getDashboardSnapshot(yearFilter, sortKey);
   const followerSubtitle =
     "Follower growth from account creation date to the latest update date.";
+  const trendSubtitle = "Data since Feb 15, 2026";
+  const trendTabs: TrendTab[] = [
+    {
+      key: "views",
+      label: "Views",
+      valueLabel: "Views",
+      chartAriaLabel: "Views over the last 30 ingested days.",
+      data: snap.viewsTrend,
+    },
+    {
+      key: "likes-saves",
+      label: "Likes & saves",
+      valueLabel: "Likes & saves",
+      chartAriaLabel:
+        "Daily likes plus saves summed over the last 30 ingested days.",
+      data: snap.likesAndSavesTrend,
+    },
+    {
+      key: "cover-ctr",
+      label: "Cover CTR",
+      valueLabel: "CTR",
+      chartAriaLabel: "Cover CTR over the last 30 ingested days.",
+      data: snap.coverCtrTrend,
+      note: "Note: CTR = Click-Through Rate(点击率)，CTR = Views(观看量) ÷ Impressions(曝光量) x 100%",
+    },
+    {
+      key: "published",
+      label: "Published posts",
+      valueLabel: "Published",
+      chartAriaLabel: "Published posts over the last 30 ingested days.",
+      data: snap.publishTrend,
+      chartType: "monthlyBar",
+    },
+  ];
 
   return (
     <main className="dashboard-shell">
       <section className="dashboard-hero" aria-labelledby="dashboard-title">
         <div className="dashboard-header">
-          <div className="dashboard-title-block">
-            <h1 id="dashboard-title">Xiaohongshu Analytics Dashboard</h1>
-          </div>
         </div>
         <div className="hero-stat-block hero-stat-kpi-align">
           <div className="hero-stat-value">
@@ -148,30 +311,47 @@ export default async function DashboardPage({
             />
           </div>
         </div>
+        <div className="dashboard-title-block">
+          <h1 id="dashboard-title">Xiaohongshu Analytics Dashboard</h1>
+        </div>
       </section>
 
-      <section className="kpi-grid kpi-grid-floating" aria-label="Key performance indicators">
-        <div className="kpi-card">
-          <div className="kpi-label">Total followers</div>
-          <div className="kpi-value">{formatInt(snap.kpi.followers)}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Total posts</div>
-          <div className="kpi-value">{formatInt(snap.kpi.totalPosts)}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Likes &amp; saves</div>
-          <div className="kpi-value">{formatInt(snap.kpi.likesAndSaves)}</div>
-        </div>
-        <div className="kpi-card">
-          <div className="kpi-label">Days since launch</div>
-          <div className="kpi-value">{formatInt(snap.kpi.daysSinceLaunch)}</div>
+      <section className="section section-card" aria-labelledby="overview-heading">
+        <SectionHeading
+          index="01"
+          title="Performance Overview"
+          subtitle="Percentage changes show increase or decrease compared to the 30 days prior."
+          headingId="overview-heading"
+        />
+        <div className="performance-overview-stack">
+          <div
+            className="kpi-grid kpi-grid--in-section"
+            aria-label="Key performance indicators"
+          >
+            <div className="kpi-card">
+              <div className="kpi-label">Total followers</div>
+              <div className="kpi-value">{formatInt(snap.kpi.followers)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Total posts</div>
+              <div className="kpi-value">{formatInt(snap.kpi.totalPosts)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Likes &amp; saves</div>
+              <div className="kpi-value">{formatInt(snap.kpi.likesAndSaves)}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Days since launch</div>
+              <div className="kpi-value">{formatInt(snap.kpi.daysSinceLaunch)}</div>
+            </div>
+          </div>
+          <PerformanceOverviewMetrics metrics={snap.performanceOverview} />
         </div>
       </section>
 
       <section className="section section-card" aria-labelledby="follower-heading">
         <SectionHeading
-          index="01"
+          index="02"
           title="Growth Timeline"
           subtitle={followerSubtitle}
           headingId="follower-heading"
@@ -189,18 +369,37 @@ export default async function DashboardPage({
         </p>
       </section>
 
+      <section
+        className="section section-card section-trends"
+        aria-labelledby="trends-heading"
+      >
+        <SectionHeading
+          index="03"
+          title="Content Performance"
+          subtitle={trendSubtitle}
+          headingId="trends-heading"
+        />
+        <DashboardTrendTabs tabs={trendTabs} />
+      </section>
+
       <section className="section section-card" aria-labelledby="top-heading">
         <SectionHeading
-          index="02"
+          index="04"
           title={
             yearFilter == null
               ? "Top 10 Posts of All Time"
               : `Top 10 Posts (${yearFilter})`
           }
-          subtitle="Ranked by views"
+          subtitle={`Default: ranked by views
+If values are equal, newer posts come first, then views, impressions, likes & saves, and new followers.
+Due to Xiaohongshu export limitations, this section only displays and analyzes posts published on or after Sep 26, 2025.`}
           headingId="top-heading"
         />
-        <DashboardYearFilter years={snap.years} selectedYear={yearFilter} />
+        <DashboardYearFilter
+          years={snap.years}
+          selectedYear={yearFilter}
+          selectedSort={sortKey}
+        />
         {snap.topNotes.length === 0 ? (
           <p className="empty-hint">No notes match this filter yet.</p>
         ) : (
@@ -212,43 +411,6 @@ export default async function DashboardPage({
             ))}
           </div>
         )}
-      </section>
-
-      <section
-        className="section section-card section-trends"
-        aria-labelledby="trends-heading"
-      >
-        <SectionHeading
-          index="03"
-          title="Engagement &amp; view trends"
-          headingId="trends-heading"
-        />
-        <div className="chart-grid-3">
-          <div className="mini-chart">
-            <h3>Cover click rate</h3>
-            <TrendLineChart
-              data={snap.coverCtrTrend}
-              valueLabel="CTR"
-              chartAriaLabel="Cover click rate over the last 30 ingested days."
-            />
-          </div>
-          <div className="mini-chart">
-            <h3>Likes &amp; saves</h3>
-            <TrendLineChart
-              data={snap.likesAndSavesTrend}
-              valueLabel="Likes & saves"
-              chartAriaLabel="Daily likes plus saves summed over the last 30 ingested days."
-            />
-          </div>
-          <div className="mini-chart">
-            <h3>Views</h3>
-            <TrendLineChart
-              data={snap.viewsTrend}
-              valueLabel="Views"
-              chartAriaLabel="Views over the last 30 ingested days."
-            />
-          </div>
-        </div>
       </section>
     </main>
   );

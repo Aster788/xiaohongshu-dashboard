@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { FollowerPointDTO } from "@/lib/dashboard/types";
 import {
   Area,
@@ -128,9 +128,15 @@ export function FollowerLineChart({
   const uid = useId().replace(/:/g, "");
   const gradId = `followerFill-${uid}`;
   const shadowId = `followerLineShadow-${uid}`;
+  const [mounted, setMounted] = useState(false);
 
   const chartData = useMemo(() => enrichFollowerSeries(data), [data]);
   const monthTicks = useMemo(() => monthTickDateIsos(data), [data]);
+  const monthGuides = monthTicks.slice(1);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   if (chartData.length === 0) {
     return <p className="empty-hint">No follower trend data yet.</p>;
@@ -143,136 +149,138 @@ export function FollowerLineChart({
         style={{ width: "100%", minWidth: 0, height: 320 }}
         aria-hidden="true"
       >
-        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 10, right: 28, left: 4, bottom: 28 }}
-          >
-            <defs>
-              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="0%"
-                  stopColor="var(--caser-chart-primary)"
-                  stopOpacity={0.26}
-                />
-                <stop
-                  offset="100%"
-                  stopColor="var(--caser-chart-primary)"
-                  stopOpacity={0}
-                />
-              </linearGradient>
-              <filter
-                id={shadowId}
-                x="-25%"
-                y="-25%"
-                width="150%"
-                height="150%"
-              >
-                <feDropShadow
-                  dx="0"
-                  dy="1"
-                  stdDeviation="2.2"
-                  floodColor="#5c1891"
-                  floodOpacity="0.32"
-                />
-              </filter>
-            </defs>
-            <CartesianGrid
-              stroke="var(--caser-chart-grid)"
-              strokeDasharray="3 6"
-              vertical={false}
-            />
-            {monthTicks.map((iso) => (
-              <ReferenceLine
-                key={iso}
-                x={iso}
-                stroke="rgba(92, 24, 145, 0.11)"
-                strokeDasharray="4 5"
+        {mounted ? (
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <ComposedChart
+              data={chartData}
+              margin={{ top: 12, right: 34, left: 4, bottom: 24 }}
+            >
+              <defs>
+                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                  <stop
+                    offset="0%"
+                    stopColor="var(--caser-chart-primary)"
+                    stopOpacity={0.26}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="var(--caser-chart-primary)"
+                    stopOpacity={0}
+                  />
+                </linearGradient>
+                <filter
+                  id={shadowId}
+                  x="-25%"
+                  y="-25%"
+                  width="150%"
+                  height="150%"
+                >
+                  <feDropShadow
+                    dx="0"
+                    dy="1"
+                    stdDeviation="2.2"
+                    floodColor="#4338ca"
+                    floodOpacity="0.16"
+                  />
+                </filter>
+              </defs>
+              <CartesianGrid
+                stroke="var(--caser-chart-grid)"
+                strokeDasharray="3 6"
+                vertical={false}
               />
-            ))}
-            <XAxis
-              dataKey="dateIso"
-              type="category"
-              ticks={monthTicks}
-              tickFormatter={formatMonthYearUtc}
-              tick={axisTick}
-              tickMargin={10}
-              padding={{ right: 10 }}
-              axisLine={{ stroke: "rgba(92, 24, 145, 0.14)" }}
-              tickLine={{ stroke: "rgba(92, 24, 145, 0.14)" }}
-            />
-            <YAxis
-              tick={axisTick}
-              tickFormatter={(v) => Number(v).toLocaleString("en-US")}
-              width={58}
-              domain={[0, "auto"]}
-              padding={{ top: 10, bottom: 6 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              content={(p) => (
-                <FollowerTooltip
-                  active={p.active}
-                  payload={
-                    p.payload as ReadonlyArray<{ payload?: Row }> | undefined
-                  }
+              {monthGuides.map((iso) => (
+                <ReferenceLine
+                  key={iso}
+                  x={iso}
+                  stroke="rgba(148, 163, 184, 0.36)"
+                  strokeDasharray="4 5"
                 />
-              )}
-            />
-            <Area
-              type="linear"
-              dataKey="followers"
-              stroke="none"
-              fill={`url(#${gradId})`}
-              isAnimationActive={false}
-            />
-            <Line
-              type="linear"
-              dataKey="followers"
-              stroke="var(--caser-chart-primary)"
-              strokeWidth={2.75}
-              dot={(props) => {
-                const row = props.payload as Row | undefined;
-                if (!row) return null;
-                if (row.burstDot) {
-                  return (
-                    <circle
-                      cx={props.cx}
-                      cy={props.cy}
-                      r={8}
-                      fill="var(--caser-chart-secondary)"
-                      stroke="#fff"
-                      strokeWidth={2.25}
-                      style={{ filter: `url(#${shadowId})` }}
-                    />
-                  );
-                }
-                if (row.milestoneDot) {
-                  return (
-                    <circle
-                      cx={props.cx}
-                      cy={props.cy}
-                      r={6.5}
-                      fill="var(--caser-chart-primary)"
-                      stroke="#fff"
-                      strokeWidth={2}
-                    />
-                  );
-                }
-                return null;
-              }}
-              activeDot={{
-                r: 9,
-                fill: "var(--caser-chart-secondary)",
-                stroke: "#fff",
-                strokeWidth: 2.25,
-              }}
-              style={{ filter: `url(#${shadowId})` }}
-              isAnimationActive={false}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
+              ))}
+              <XAxis
+                dataKey="dateIso"
+                type="category"
+                ticks={monthTicks}
+                tickFormatter={formatMonthYearUtc}
+                tick={axisTick}
+                tickMargin={12}
+                padding={{ left: 4, right: 18 }}
+                axisLine={{ stroke: "rgba(148, 163, 184, 0.5)" }}
+                tickLine={{ stroke: "rgba(148, 163, 184, 0.5)" }}
+              />
+              <YAxis
+                tick={axisTick}
+                tickFormatter={(v) => Number(v).toLocaleString("en-US")}
+                width={58}
+                domain={[0, "auto"]}
+                padding={{ top: 10, bottom: 6 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                content={(p) => (
+                  <FollowerTooltip
+                    active={p.active}
+                    payload={
+                      p.payload as ReadonlyArray<{ payload?: Row }> | undefined
+                    }
+                  />
+                )}
+              />
+              <Area
+                type="linear"
+                dataKey="followers"
+                stroke="none"
+                fill={`url(#${gradId})`}
+                isAnimationActive={false}
+              />
+              <Line
+                type="linear"
+                dataKey="followers"
+                stroke="var(--caser-chart-primary)"
+                strokeWidth={2.75}
+                dot={(props) => {
+                  const row = props.payload as Row | undefined;
+                  if (!row) return null;
+                  if (row.burstDot) {
+                    return (
+                      <circle
+                        cx={props.cx}
+                        cy={props.cy}
+                        r={7.25}
+                        fill="var(--caser-chart-secondary)"
+                        stroke="#fff"
+                        strokeWidth={2.25}
+                        style={{ filter: `url(#${shadowId})` }}
+                      />
+                    );
+                  }
+                  if (row.milestoneDot) {
+                    return (
+                      <circle
+                        cx={props.cx}
+                        cy={props.cy}
+                        r={5.5}
+                        fill="var(--caser-chart-primary)"
+                        stroke="#fff"
+                        strokeWidth={2}
+                      />
+                    );
+                  }
+                  return null;
+                }}
+                activeDot={{
+                  r: 7.5,
+                  fill: "var(--caser-chart-secondary)",
+                  stroke: "#fff",
+                  strokeWidth: 2.25,
+                }}
+                style={{ filter: `url(#${shadowId})` }}
+                isAnimationActive={false}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : null}
       </div>
     </div>
   );

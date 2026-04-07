@@ -3,33 +3,23 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import type { TrendPointDTO } from "@/lib/dashboard/types";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 
-type Row = TrendPointDTO;
+type MonthlyRow = {
+  monthIso: string;
+  total: number;
+};
 
 function parseIsoUtc(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1));
-}
-
-function monthTickDateIsos(data: TrendPointDTO[]): string[] {
-  const out: string[] = [];
-  let prevYm = "";
-  for (const row of data) {
-    const ym = row.dateIso.slice(0, 7);
-    if (ym !== prevYm) {
-      prevYm = ym;
-      out.push(row.dateIso);
-    }
-  }
-  return out;
 }
 
 function formatMonthYearUtc(iso: string): string {
@@ -40,42 +30,42 @@ function formatMonthYearUtc(iso: string): string {
   });
 }
 
-function formatFullDateUtc(iso: string): string {
-  return parseIsoUtc(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+function aggregateMonthly(data: TrendPointDTO[]): MonthlyRow[] {
+  const byMonth = new Map<string, number>();
+  for (const row of data) {
+    const monthIso = `${row.dateIso.slice(0, 7)}-01`;
+    byMonth.set(monthIso, (byMonth.get(monthIso) ?? 0) + row.value);
+  }
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([monthIso, total]) => ({
+      monthIso,
+      total,
+    }));
 }
 
-function TrendTooltip(
-  props: {
-    active?: boolean;
-    payload?: ReadonlyArray<{ value?: unknown; payload?: TrendPointDTO }>;
-    label?: string | number;
-    valueLabel: string;
-  },
-) {
-  const { active, payload, label, valueLabel } = props;
-  const first = payload?.[0];
-  if (!active || !first) return null;
+function PublishedTooltip(props: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ value?: unknown; payload?: MonthlyRow }>;
+}) {
+  const first = props.payload?.[0];
+  if (!props.active || !first?.payload) return null;
+
   const raw = first.value;
-  const v =
+  const total =
     typeof raw === "number"
       ? raw
       : typeof raw === "string"
         ? Number(raw)
         : NaN;
-  const dateIso = first.payload?.dateIso ?? String(label ?? "");
+
   return (
     <div className="chart-tooltip">
-      {dateIso ? (
-        <div className="chart-tooltip-date">{formatFullDateUtc(dateIso)}</div>
-      ) : null}
+      <div className="chart-tooltip-date">
+        {formatMonthYearUtc(first.payload.monthIso)}
+      </div>
       <div>
-        {valueLabel}:{" "}
-        {Number.isFinite(v) ? v.toLocaleString("en-US") : "—"}
+        Published posts: {Number.isFinite(total) ? total.toLocaleString("en-US") : "—"}
       </div>
     </div>
   );
@@ -83,20 +73,17 @@ function TrendTooltip(
 
 const axisTickSm = { fill: "var(--caser-chart-axis)", fontSize: 10 };
 
-export function TrendLineChart({
+export function PublishedPostsBarChart({
   data,
-  valueLabel,
   chartAriaLabel,
 }: {
   data: TrendPointDTO[];
-  valueLabel: string;
   chartAriaLabel: string;
 }) {
   const uid = useId().replace(/:/g, "");
-  const shadowId = `trendLineShadow-${uid}`;
+  const shadowId = `publishedBarShadow-${uid}`;
   const [mounted, setMounted] = useState(false);
-  const rows: Row[] = data;
-  const monthTicks = useMemo(() => monthTickDateIsos(data), [data]);
+  const rows = useMemo(() => aggregateMonthly(data), [data]);
 
   useEffect(() => {
     setMounted(true);
@@ -115,10 +102,7 @@ export function TrendLineChart({
       >
         {mounted ? (
           <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-            <LineChart
-              data={rows}
-              margin={{ top: 8, right: 20, left: 2, bottom: 12 }}
-            >
+            <BarChart data={rows} margin={{ top: 8, right: 20, left: 2, bottom: 12 }}>
               <defs>
                 <filter
                   id={shadowId}
@@ -132,7 +116,7 @@ export function TrendLineChart({
                     dy="1"
                     stdDeviation="1.6"
                     floodColor="#4338ca"
-                    floodOpacity="0.16"
+                    floodOpacity="0.14"
                   />
                 </filter>
               </defs>
@@ -142,13 +126,10 @@ export function TrendLineChart({
                 vertical={false}
               />
               <XAxis
-                dataKey="dateIso"
-                type="category"
-                ticks={monthTicks}
+                dataKey="monthIso"
                 tickFormatter={formatMonthYearUtc}
                 tick={axisTickSm}
                 tickMargin={10}
-                padding={{ right: 8 }}
                 axisLine={{ stroke: "rgba(148, 163, 184, 0.48)" }}
                 tickLine={{ stroke: "rgba(148, 163, 184, 0.48)" }}
               />
@@ -157,40 +138,33 @@ export function TrendLineChart({
                 tickFormatter={(v) => Number(v).toLocaleString("en-US")}
                 width={46}
                 domain={[0, "auto"]}
+                allowDecimals={false}
                 padding={{ top: 8, bottom: 5 }}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
+                cursor={{ fill: "rgba(139, 92, 246, 0.14)" }}
                 content={(p) => (
-                  <TrendTooltip
+                  <PublishedTooltip
                     active={p.active}
                     payload={
                       p.payload as
-                        | ReadonlyArray<{ value?: unknown; payload?: TrendPointDTO }>
+                        | ReadonlyArray<{ value?: unknown; payload?: MonthlyRow }>
                         | undefined
                     }
-                    label={p.label}
-                    valueLabel={valueLabel}
                   />
                 )}
               />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="var(--caser-chart-secondary)"
-                strokeWidth={2.35}
-                dot={false}
-                activeDot={{
-                  r: 5,
-                  fill: "var(--caser-chart-primary)",
-                  stroke: "#fff",
-                  strokeWidth: 2,
-                }}
+              <Bar
+                dataKey="total"
+                fill="var(--caser-chart-secondary)"
+                radius={[10, 10, 0, 0]}
+                maxBarSize={88}
                 style={{ filter: `url(#${shadowId})` }}
                 isAnimationActive={false}
               />
-            </LineChart>
+            </BarChart>
           </ResponsiveContainer>
         ) : null}
       </div>

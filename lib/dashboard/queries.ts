@@ -1,7 +1,10 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type {
   DashboardSnapshotDTO,
   FollowerPointDTO,
+  PerformanceOverviewMetricDTO,
+  TopNotesSortKey,
   TopNoteRowDTO,
   TrendPointDTO,
 } from "./types";
@@ -13,9 +16,13 @@ const METRIC_PREFIX = {
   newFollows: "follower.new_follows_trend.",
   unfollows: "follower.unfollows_trend.",
   coverCtr: "view.cover_ctr.",
+  impressions: "view.impressions_trend.",
   likes: "engage.likes_trend.",
   saves: "engage.saves_trend.",
   views: "view.views_trend.",
+  avgWatchDuration: "view.avg_watch_duration_trend.",
+  profileConvRate: "profile.conv_rate_trend.",
+  publishTotal: "publish.total_trend.",
 } as const;
 
 function mergeDailyMaps(
@@ -108,6 +115,173 @@ function last30DayPoints(map: Map<string, number>): TrendPointDTO[] {
     pts.push({ dateIso: ds, value: map.get(ds) ?? 0 });
   }
   return pts;
+}
+
+function latestIsoDateFromMaps(...maps: Array<Map<string, number>>): string | null {
+  let latest: string | null = null;
+  for (const map of maps) {
+    for (const iso of map.keys()) {
+      if (latest === null || iso > latest) latest = iso;
+    }
+  }
+  return latest;
+}
+
+function aggregateWindow(
+  map: Map<string, number>,
+  start: Date,
+  end: Date,
+  mode: "sum" | "avg",
+): number | null {
+  let total = 0;
+  let count = 0;
+
+  for (
+    let d = new Date(start.getTime());
+    utcCalendarDaysBetween(d, end) >= 0;
+    d = addUtcDays(d, 1)
+  ) {
+    const value = map.get(toIsoDateUTC(d));
+    if (value == null) continue;
+    total += value;
+    count += 1;
+  }
+
+  if (count === 0) return null;
+  return mode === "avg" ? total / count : total;
+}
+
+function computePctChange(current: number | null, prior: number | null): number | null {
+  if (current == null || prior == null || prior === 0) return null;
+  return ((current - prior) / prior) * 100;
+}
+
+function metricTrendFromPctChange(
+  pctChange: number | null,
+): PerformanceOverviewMetricDTO["trend"] {
+  if (pctChange == null || pctChange === 0) return "flat";
+  return pctChange > 0 ? "up" : "down";
+}
+
+function makePerformanceMetric(
+  kind: PerformanceOverviewMetricDTO["kind"],
+  labelZh: string,
+  labelEn: string,
+  current: number | null,
+  prior: number | null,
+): PerformanceOverviewMetricDTO {
+  const pctChange = computePctChange(current, prior);
+  return {
+    kind,
+    labelZh,
+    labelEn,
+    current,
+    prior,
+    pctChange,
+    trend: metricTrendFromPctChange(pctChange),
+  };
+}
+
+function buildPerformanceOverviewMetrics(args: {
+  impressionsMap: Map<string, number>;
+  viewsMap: Map<string, number>;
+  coverMap: Map<string, number>;
+  avgWatchDurationMap: Map<string, number>;
+  likesMap: Map<string, number>;
+  savesMap: Map<string, number>;
+  netByDate: Map<string, number>;
+  profileConvRateMap: Map<string, number>;
+}): PerformanceOverviewMetricDTO[] {
+  const anchorIso = latestIsoDateFromMaps(
+    args.impressionsMap,
+    args.viewsMap,
+    args.coverMap,
+    args.avgWatchDurationMap,
+    args.likesMap,
+    args.savesMap,
+    args.netByDate,
+    args.profileConvRateMap,
+  );
+
+  const empty = (kind: PerformanceOverviewMetricDTO["kind"], labelZh: string, labelEn: string) =>
+    makePerformanceMetric(kind, labelZh, labelEn, null, null);
+
+  if (!anchorIso) {
+    return [
+      empty("impressions", "曝光", "Impressions"),
+      empty("views", "观看", "Views"),
+      empty("cover-ctr", "封面点击率", "Cover CTR"),
+      empty("avg-watch-duration", "平均观看时长", "Avg watch duration"),
+      empty("likes", "点赞", "Likes"),
+      empty("saves", "收藏", "Saves"),
+      empty("net-followers", "净涨粉", "Net followers"),
+      empty("profile-conv-rate", "主页转粉率", "Profile conv. rate"),
+    ];
+  }
+
+  const currentEnd = parseIsoDateUTC(anchorIso);
+  const currentStart = addUtcDays(currentEnd, -29);
+  const priorEnd = addUtcDays(currentEnd, -30);
+  const priorStart = addUtcDays(currentEnd, -59);
+
+  const sumWindowMetric = (map: Map<string, number>) => ({
+    current: aggregateWindow(map, currentStart, currentEnd, "sum"),
+    prior: aggregateWindow(map, priorStart, priorEnd, "sum"),
+  });
+  const avgWindowMetric = (map: Map<string, number>) => ({
+    current: aggregateWindow(map, currentStart, currentEnd, "avg"),
+    prior: aggregateWindow(map, priorStart, priorEnd, "avg"),
+  });
+
+  const impressions = sumWindowMetric(args.impressionsMap);
+  const views = sumWindowMetric(args.viewsMap);
+  const coverCtr = avgWindowMetric(args.coverMap);
+  const avgWatchDuration = avgWindowMetric(args.avgWatchDurationMap);
+  const likes = sumWindowMetric(args.likesMap);
+  const saves = sumWindowMetric(args.savesMap);
+  const netFollowers = sumWindowMetric(args.netByDate);
+  const profileConvRate = avgWindowMetric(args.profileConvRateMap);
+
+  return [
+    makePerformanceMetric(
+      "impressions",
+      "曝光",
+      "Impressions",
+      impressions.current,
+      impressions.prior,
+    ),
+    makePerformanceMetric("views", "观看", "Views", views.current, views.prior),
+    makePerformanceMetric(
+      "cover-ctr",
+      "封面点击率",
+      "Cover CTR",
+      coverCtr.current,
+      coverCtr.prior,
+    ),
+    makePerformanceMetric(
+      "avg-watch-duration",
+      "平均观看时长",
+      "Avg watch duration",
+      avgWatchDuration.current,
+      avgWatchDuration.prior,
+    ),
+    makePerformanceMetric("likes", "点赞", "Likes", likes.current, likes.prior),
+    makePerformanceMetric("saves", "收藏", "Saves", saves.current, saves.prior),
+    makePerformanceMetric(
+      "net-followers",
+      "净涨粉",
+      "Net followers",
+      netFollowers.current,
+      netFollowers.prior,
+    ),
+    makePerformanceMetric(
+      "profile-conv-rate",
+      "主页转粉率",
+      "Profile conv. rate",
+      profileConvRate.current,
+      profileConvRate.prior,
+    ),
+  ];
 }
 
 function buildFollowerCurve(
@@ -207,6 +381,7 @@ function mapTopNoteRow(n: {
   comments: number | null;
   saves: number | null;
   shares: number | null;
+  followerGain: number | null;
   postUrl: string | null;
 }): TopNoteRowDTO {
   return {
@@ -220,12 +395,102 @@ function mapTopNoteRow(n: {
     comments: n.comments,
     saves: n.saves,
     shares: n.shares,
+    followerGain: n.followerGain,
     postUrl: n.postUrl,
   };
 }
 
+function likesAndSavesOrderExpr() {
+  return Prisma.sql`(COALESCE(likes, 0) + COALESCE(saves, 0))`;
+}
+
+function fallbackTopNotesOrderSql() {
+  return Prisma.sql`
+    published_date DESC,
+    views DESC NULLS LAST,
+    impressions DESC NULLS LAST,
+    ${likesAndSavesOrderExpr()} DESC,
+    follower_gain DESC NULLS LAST
+  `;
+}
+
+function topNotesOrderBySql(sortKey: TopNotesSortKey) {
+  switch (sortKey) {
+    case "impressions":
+      return Prisma.sql`
+        ORDER BY impressions DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
+      `;
+    case "likes-saves":
+      return Prisma.sql`
+        ORDER BY ${likesAndSavesOrderExpr()} DESC, ${fallbackTopNotesOrderSql()}
+      `;
+    case "shares":
+      return Prisma.sql`
+        ORDER BY shares DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
+      `;
+    case "new-followers":
+      return Prisma.sql`
+        ORDER BY follower_gain DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
+      `;
+    case "views":
+    default:
+      return Prisma.sql`
+        ORDER BY views DESC NULLS LAST, ${fallbackTopNotesOrderSql()}
+      `;
+  }
+}
+
+async function getTopNotes(
+  yearFilter: number | null,
+  sortKey: TopNotesSortKey,
+) {
+  const yearWhere =
+    yearFilter !== null
+      ? Prisma.sql`
+          WHERE published_date >= ${new Date(Date.UTC(yearFilter, 0, 1))}
+            AND published_date < ${new Date(Date.UTC(yearFilter + 1, 0, 1))}
+        `
+      : Prisma.empty;
+
+  return prisma.$queryRaw<
+    Array<{
+      id: string;
+      title: string;
+      format: string | null;
+      publishedDate: Date;
+      impressions: bigint | null;
+      views: number | null;
+      likes: number | null;
+      comments: number | null;
+      saves: number | null;
+      shares: number | null;
+      followerGain: number | null;
+      postUrl: string | null;
+    }>
+  >(Prisma.sql`
+    SELECT
+      id,
+      title,
+      format,
+      published_date AS "publishedDate",
+      impressions,
+      views,
+      likes,
+      comments,
+      saves,
+      shares,
+      follower_gain AS "followerGain",
+      post_url AS "postUrl"
+    FROM notes
+    ${yearWhere}
+    ${topNotesOrderBySql(sortKey)}
+    LIMIT 10
+  `);
+}
+
 export async function getDashboardSnapshot(
   yearFilter: number | null,
+  sortKey: TopNotesSortKey,
 ): Promise<DashboardSnapshotDTO> {
   const settings =
     (await prisma.settings.findUnique({ where: { id: 1 } })) ??
@@ -241,9 +506,13 @@ export async function getDashboardSnapshot(
     newFollowsMap,
     unfollowsMap,
     coverMap,
+    impressionsMap,
     likesMap,
     savesMap,
     viewsMap,
+    avgWatchDurationMap,
+    profileConvRateMap,
+    publishMap,
     yearRows,
     topNotes,
   ] = await Promise.all([
@@ -251,30 +520,19 @@ export async function getDashboardSnapshot(
       sumByDatePrefix(METRIC_PREFIX.newFollows),
       sumByDatePrefix(METRIC_PREFIX.unfollows),
       sumByDatePrefix(METRIC_PREFIX.coverCtr),
+      sumByDatePrefix(METRIC_PREFIX.impressions),
       sumByDatePrefix(METRIC_PREFIX.likes),
       sumByDatePrefix(METRIC_PREFIX.saves),
       sumByDatePrefix(METRIC_PREFIX.views),
+      sumByDatePrefix(METRIC_PREFIX.avgWatchDuration),
+      sumByDatePrefix(METRIC_PREFIX.profileConvRate),
+      sumByDatePrefix(METRIC_PREFIX.publishTotal),
       prisma.$queryRaw<{ y: number }[]>`
         SELECT DISTINCT EXTRACT(YEAR FROM published_date)::int AS y
         FROM notes
         ORDER BY y DESC
       `,
-      prisma.note.findMany({
-        where:
-          yearFilter !== null
-            ? {
-                publishedDate: {
-                  gte: new Date(Date.UTC(yearFilter, 0, 1)),
-                  lt: new Date(Date.UTC(yearFilter + 1, 0, 1)),
-                },
-              }
-            : undefined,
-        orderBy: [
-          { views: { sort: "desc", nulls: "last" } },
-          { publishedDate: "desc" },
-        ],
-        take: 10,
-      }),
+      getTopNotes(yearFilter, sortKey),
     ]);
 
   const netByDate = mergeNetFollowerByDate(
@@ -300,6 +558,16 @@ export async function getDashboardSnapshot(
       daysSinceLaunch: daysSinceLaunchUTC(settings.launchDate),
       launchDateIso: toIsoDateUTC(settings.launchDate),
     },
+    performanceOverview: buildPerformanceOverviewMetrics({
+      impressionsMap,
+      viewsMap,
+      coverMap,
+      avgWatchDurationMap,
+      likesMap,
+      savesMap,
+      netByDate,
+      profileConvRateMap,
+    }),
     followerPoints: buildFollowerCurve(
       settings.launchDate,
       settings.followers,
@@ -308,6 +576,7 @@ export async function getDashboardSnapshot(
     coverCtrTrend: last30DayPoints(coverMap),
     likesAndSavesTrend: last30DayPoints(mergeDailyMaps(likesMap, savesMap)),
     viewsTrend: last30DayPoints(viewsMap),
+    publishTrend: last30DayPoints(publishMap),
     years,
     topNotes: topNotes.map(mapTopNoteRow),
   };
