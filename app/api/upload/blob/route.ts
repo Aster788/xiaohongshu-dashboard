@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import {
+  badRequest,
+  serverError,
+  unauthorizedJson,
+} from "@/lib/api/response";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
 import {
   isAllowedUploadBlobPath,
@@ -14,27 +19,20 @@ const ALLOWED_XLSX_CONTENT_TYPES = [
   "application/octet-stream",
 ];
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
 export async function POST(request: Request) {
   if (!isUploadRequestAuthorized(request)) {
-    return unauthorized();
+    return unauthorizedJson();
   }
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return NextResponse.json(
-      { error: "BLOB_READ_WRITE_TOKEN is not configured" },
-      { status: 500 },
-    );
+    return serverError("BLOB_READ_WRITE_TOKEN is not configured");
   }
 
   let body: HandleUploadBody;
   try {
     body = (await request.json()) as HandleUploadBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return badRequest("Invalid JSON");
   }
 
   try {
@@ -59,6 +57,6 @@ export async function POST(request: Request) {
     return NextResponse.json(json);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Blob token generation failed";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return badRequest(message);
   }
 }

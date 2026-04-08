@@ -9,7 +9,7 @@
     "dev:3002": "next dev -p 3002",
     "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "perf:home": "node scripts/loadtest-home.mjs",
     "db:generate": "dotenv -c development -- prisma generate",
     "db:migrate": "dotenv -c development -- prisma migrate dev",
@@ -34,6 +34,8 @@
     "@types/react-dom": "^19.0.0",
     "dotenv": "^17.4.0",
     "dotenv-cli": "^8.0.0",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.2",
     "prisma": "^6.19.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"

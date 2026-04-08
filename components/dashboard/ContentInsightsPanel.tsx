@@ -18,8 +18,12 @@ export function ContentInsightsPanel({
         <article key={insight.id} className="insight-card">
           <div className="insight-card-head">
             <h3>{insight.title}</h3>
+            <span className={`insight-strength insight-strength-${insight.strength}`}>
+              {insight.strength}
+            </span>
           </div>
           <p>{insight.supportingData}</p>
+          <p className="insight-recommendation">{insight.recommendation}</p>
         </article>
       ))}
     </div>

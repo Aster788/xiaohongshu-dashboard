@@ -22,19 +22,25 @@ export function DashboardTrendTabs({ tabs }: { tabs: TrendTab[] }) {
   const [activeKey, setActiveKey] = useState(tabs[0]?.key ?? "");
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isChartReady, setIsChartReady] = useState(false);
-  const active = tabs.find((tab) => tab.key === activeKey) ?? tabs[0] ?? null;
-  const coverCtrNote = tabs.find((tab) => tab.key === "cover-ctr")?.note ?? null;
-
-  if (!active) return null;
 
   useEffect(() => {
-    setIsChartReady(true);
+    const readyTimer = window.setTimeout(() => {
+      setIsChartReady(true);
+    }, 0);
     const mql = window.matchMedia("(max-width: 760px)");
     const sync = () => setIsMobileViewport(mql.matches);
     sync();
     mql.addEventListener("change", sync);
-    return () => mql.removeEventListener("change", sync);
+    return () => {
+      window.clearTimeout(readyTimer);
+      mql.removeEventListener("change", sync);
+    };
   }, []);
+
+  const active = tabs.find((tab) => tab.key === activeKey) ?? tabs[0] ?? null;
+  const coverCtrNote = tabs.find((tab) => tab.key === "cover-ctr")?.note ?? null;
+
+  if (!active) return null;
 
   function renderNoteBody(body: string): ReactNode {
     const matches = [...body.matchAll(CTR_NOTE_DIVISOR)];

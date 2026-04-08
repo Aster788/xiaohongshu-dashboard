@@ -519,18 +519,9 @@ function titleHasAuthoritySignal(title: string): boolean {
   return AUTHORITY_PHRASES.some((phrase) => normalized.includes(phrase));
 }
 
-function pct(numerator: number, denominator: number): number {
-  if (denominator <= 0) return 0;
-  return (numerator / denominator) * 100;
-}
-
 function average(values: number[]): number {
   if (values.length === 0) return 0;
   return values.reduce((sum, v) => sum + v, 0) / values.length;
-}
-
-function formatPct(value: number): string {
-  return `${value.toFixed(1)}%`;
 }
 
 function buildContentInsights(notes: InsightCandidateNote[]): ContentInsightDTO[] {
@@ -641,6 +632,8 @@ export async function getDashboardSnapshot(
   _yearFilter: number | null,
   _sortKey: TopNotesSortKey,
 ): Promise<DashboardSnapshotDTO> {
+  void _yearFilter;
+  void _sortKey;
   const [
     settingsRow,
     metricMapsByPrefix,
@@ -773,13 +766,14 @@ export async function getContentInsightsNoCache(): Promise<ContentInsightDTO[]> 
 }
 
 export async function getDashboardSnapshotCached(
-  yearFilter: number | null,
-  sortKey: TopNotesSortKey,
+  _yearFilter: number | null,
+  _sortKey: TopNotesSortKey,
 ): Promise<DashboardSnapshotDTO> {
-  const cacheKey = `${yearFilter ?? "all"}:${sortKey}`;
+  void _yearFilter;
+  void _sortKey;
   const cached = unstable_cache(
-    () => getDashboardSnapshot(yearFilter, sortKey),
-    ["dashboard-snapshot", DASHBOARD_SNAPSHOT_CACHE_REVISION, cacheKey],
+    () => getDashboardSnapshot(null, "views"),
+    ["dashboard-snapshot", DASHBOARD_SNAPSHOT_CACHE_REVISION],
     { revalidate: 120, tags: [DASHBOARD_CACHE_TAG] },
   );
   return cached();

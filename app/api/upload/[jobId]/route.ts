@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRun } from "workflow/api";
+import { notFound, unauthorizedJson } from "@/lib/api/response";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
 import {
   buildUploadJobStatusResponse,
@@ -9,10 +10,6 @@ import {
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 async function readLatestProgress(jobId: string) {
   const probe = getRun(jobId).getReadable({ namespace: "progress" });
@@ -41,7 +38,7 @@ export async function GET(
   context: { params: Promise<{ jobId: string }> },
 ) {
   if (!isUploadRequestAuthorized(request)) {
-    return unauthorized();
+    return unauthorizedJson();
   }
 
   const { jobId } = await context.params;
@@ -49,7 +46,7 @@ export async function GET(
   try {
     const run = getRun<UploadWorkflowResult>(jobId);
     if (!(await run.exists)) {
-      return NextResponse.json({ error: "Upload job not found" }, { status: 404 });
+      return notFound("Upload job not found");
     }
 
     const [status, progress, createdAt, startedAt, completedAt] = await Promise.all([
@@ -83,6 +80,6 @@ export async function GET(
       }),
     );
   } catch {
-    return NextResponse.json({ error: "Upload job not found" }, { status: 404 });
+    return notFound("Upload job not found");
   }
 }

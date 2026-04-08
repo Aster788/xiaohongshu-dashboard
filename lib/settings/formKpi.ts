@@ -1,4 +1,5 @@
 import { parseIsoDateOnly } from "@/lib/excel/chineseDate";
+import { parseNonNegativeInt } from "@/lib/validation/number";
 
 export type KpiFormPatch = {
   followers?: number;
@@ -6,17 +7,6 @@ export type KpiFormPatch = {
   likesAndSaves?: number;
   launchDate?: Date;
 };
-
-function parseNonNegativeInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const n = Number(value);
-    if (Number.isInteger(n) && n >= 0) return n;
-  }
-  return null;
-}
 
 /**
  * Optional KPI fields on multipart upload (same semantics as PUT /api/settings JSON body).

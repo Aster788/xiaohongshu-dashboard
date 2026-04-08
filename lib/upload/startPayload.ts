@@ -1,5 +1,6 @@
 import { parseIsoDateOnly } from "@/lib/excel/chineseDate";
 import type { KpiFormPatch } from "@/lib/settings/formKpi";
+import { parseNonNegativeInt } from "@/lib/validation/number";
 
 export const MAX_FILES = 12;
 export const MAX_BYTES_PER_FILE = 20 * 1024 * 1024;
@@ -21,17 +22,6 @@ export type UploadStartPayload = {
   kpiPatch: KpiFormPatch;
   totalBytes: number;
 };
-
-function parseNonNegativeInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed >= 0) return parsed;
-  }
-  return null;
-}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);

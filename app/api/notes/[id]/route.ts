@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { badRequest, notFound, unauthorizedJson } from "@/lib/api/response";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
 import { isValidPostUrl } from "@/lib/notes/postUrl";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
 
 /**
  * PATCH /api/notes/:id — set or clear postUrl (Bearer UPLOAD_SECRET when configured).
@@ -19,7 +16,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   if (!isUploadRequestAuthorized(request)) {
-    return unauthorized();
+    return unauthorizedJson();
   }
 
   const { id } = await context.params;
@@ -28,16 +25,16 @@ export async function PATCH(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return badRequest("Invalid JSON");
   }
 
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json({ error: "Expected object body" }, { status: 400 });
+    return badRequest("Expected object body");
   }
 
   const o = body as Record<string, unknown>;
   if (!("postUrl" in o)) {
-    return NextResponse.json({ error: "Missing postUrl" }, { status: 400 });
+    return badRequest("Missing postUrl");
   }
 
   const postUrl = o.postUrl;
@@ -48,14 +45,14 @@ export async function PATCH(
   } else if (typeof postUrl === "string") {
     const trimmed = postUrl.trim();
     if (trimmed === "") {
-      return NextResponse.json({ error: "Invalid postUrl" }, { status: 400 });
+      return badRequest("Invalid postUrl");
     }
     if (!isValidPostUrl(trimmed)) {
-      return NextResponse.json({ error: "Invalid postUrl" }, { status: 400 });
+      return badRequest("Invalid postUrl");
     }
     nextUrl = trimmed;
   } else {
-    return NextResponse.json({ error: "Invalid postUrl" }, { status: 400 });
+    return badRequest("Invalid postUrl");
   }
 
   try {
@@ -69,7 +66,7 @@ export async function PATCH(
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2025") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return notFound();
     }
     throw e;
   }

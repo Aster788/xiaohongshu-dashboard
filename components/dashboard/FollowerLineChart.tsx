@@ -136,12 +136,17 @@ export function FollowerLineChart({
   const monthGuides = monthTicks.slice(1);
 
   useEffect(() => {
-    setMounted(true);
+    const mountedTimer = window.setTimeout(() => {
+      setMounted(true);
+    }, 0);
     const mql = window.matchMedia("(max-width: 760px)");
     const sync = () => setIsMobile(mql.matches);
     sync();
     mql.addEventListener("change", sync);
-    return () => mql.removeEventListener("change", sync);
+    return () => {
+      window.clearTimeout(mountedTimer);
+      mql.removeEventListener("change", sync);
+    };
   }, []);
 
   if (chartData.length === 0) {
