@@ -156,7 +156,7 @@ export default async function DashboardPage({
       valueLabel: "CTR",
       chartAriaLabel: "Cover CTR over the full ingested date range.",
       data: snap.coverCtrTrend,
-      note: "Note: CTR = Click-Through Rate(点击率)，CTR = Views ÷ Impression x 100%.",
+      note: "Note: CTR = Click-Through Rate (点击率)，CTR = Views ÷ Impression x 100%.",
     },
     {
       key: "published",
