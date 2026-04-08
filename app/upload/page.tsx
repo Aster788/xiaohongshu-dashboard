@@ -937,10 +937,10 @@ export default function UploadPage() {
   const notesPageCount = Math.max(1, Math.ceil(notesTotal / NOTES_PAGE_SIZE));
 
   return (
-    <main>
+    <main className="upload-page">
       <h1>Upload</h1>
 
-      <section aria-label="Upload and merge">
+      <section className="upload-section" aria-label="Upload and merge">
         <h2>Import workbooks</h2>
         <p>
           Select one or more official export files (.xlsx). Files upload to Blob first,
@@ -948,7 +948,7 @@ export default function UploadPage() {
           writes them to the database. Hold Ctrl (Windows) or Command (macOS) to pick
           multiple files.
         </p>
-        <div>
+        <div className="upload-field">
           <label htmlFor="upload-secret">Upload secret</label>
           <input
             id="upload-secret"
@@ -960,7 +960,7 @@ export default function UploadPage() {
           />
           <p>Required when <code>UPLOAD_SECRET</code> is set (use Authorization Bearer).</p>
         </div>
-        <div>
+        <div className="upload-field">
           <label>
             <input
               type="checkbox"
@@ -978,12 +978,7 @@ export default function UploadPage() {
           </p>
         </div>
         <div
-          style={{
-            border: "1px solid #ccc",
-            padding: "12px",
-            marginTop: "8px",
-            marginBottom: "8px",
-          }}
+          className="upload-dropzone"
           onDragOver={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -1067,7 +1062,7 @@ export default function UploadPage() {
         ) : null}
       </section>
 
-      <section aria-label="Merge preview">
+      <section className="upload-section" aria-label="Merge preview">
         <h2>Merge preview</h2>
         <p>Counts from the last successful import (inserted / updated / untouched).</p>
         {mergeSnapshot ? (
@@ -1132,7 +1127,7 @@ export default function UploadPage() {
         )}
       </section>
 
-      <section aria-label="Manual input">
+      <section className="upload-section" aria-label="Manual input">
         <h2>Manual KPI</h2>
         <p>
           Macro KPIs are stored in the database for the public dashboard. Values load when
@@ -1141,7 +1136,7 @@ export default function UploadPage() {
           upload using the checkbox above.
         </p>
         {settingsHint ? <p role="status">{settingsHint}</p> : null}
-        <div>
+        <div className="upload-field">
           <label htmlFor="followers-total">Followers (total)</label>
           <input
             id="followers-total"
@@ -1153,7 +1148,7 @@ export default function UploadPage() {
             }
           />
         </div>
-        <div>
+        <div className="upload-field">
           <label htmlFor="likes-saves-total">Likes and saves (total)</label>
           <input
             id="likes-saves-total"
@@ -1165,7 +1160,7 @@ export default function UploadPage() {
             }
           />
         </div>
-        <div>
+        <div className="upload-field">
           <label htmlFor="total-posts">Total posts</label>
           <input
             id="total-posts"
@@ -1177,7 +1172,7 @@ export default function UploadPage() {
             }
           />
         </div>
-        <div>
+        <div className="upload-field">
           <label htmlFor="launch-date">Launch date</label>
           <input
             id="launch-date"
@@ -1200,7 +1195,7 @@ export default function UploadPage() {
         </p>
       </section>
 
-      <section aria-label="Post links">
+      <section className="upload-section" aria-label="Post links">
         <h2>Post links</h2>
         <p>
           Filter notes by title keyword and publish date, then paste a post URL for each
@@ -1209,15 +1204,8 @@ export default function UploadPage() {
           row appears under that row&apos;s URL field.
         </p>
         {notesHint ? <p role="status">{notesHint}</p> : null}
-        <div
-          style={{
-            display: "grid",
-            gap: "8px",
-            marginBottom: "12px",
-            maxWidth: "720px",
-          }}
-        >
-          <div>
+        <div className="upload-filters">
+          <div className="upload-field">
             <label htmlFor="notes-q">Title contains</label>
             <input
               id="notes-q"
@@ -1227,7 +1215,7 @@ export default function UploadPage() {
               placeholder="Keyword in title"
             />
           </div>
-          <div>
+          <div className="upload-field">
             <label htmlFor="notes-year">Year</label>
             <input
               id="notes-year"
@@ -1238,8 +1226,8 @@ export default function UploadPage() {
               placeholder="e.g. 2026"
             />
           </div>
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            <div>
+          <div className="upload-inline-fields">
+            <div className="upload-field">
               <label htmlFor="notes-from">From (YYYY-MM-DD)</label>
               <input
                 id="notes-from"
@@ -1249,7 +1237,7 @@ export default function UploadPage() {
                 onChange={(e) => setNotesFrom(e.target.value)}
               />
             </div>
-            <div>
+            <div className="upload-field">
               <label htmlFor="notes-to">To (YYYY-MM-DD)</label>
               <input
                 id="notes-to"
@@ -1278,7 +1266,7 @@ export default function UploadPage() {
             <p>
               Page {notesPage} of {notesPageCount} ({notesTotal} total).
             </p>
-            <div style={{ overflowX: "auto" }}>
+            <div className="upload-table-wrap">
               <table
                 style={{
                   borderCollapse: "collapse",
@@ -1450,14 +1438,14 @@ export default function UploadPage() {
         ) : null}
       </section>
 
-      <details>
+      <details className="upload-section upload-debug">
         <summary>Parse preview (debug, not persisted)</summary>
-        <section aria-label="Parse debug" style={{ marginTop: "12px" }}>
+        <section aria-label="Parse debug">
           <p>
             Calls <code>POST /api/excel/parse</code> per file for raw grid inspection
             only. The main import path is <code>POST /api/upload</code>.
           </p>
-          <div>
+          <div className="upload-field">
             <label htmlFor="debug-excel-files">Excel files for parse preview</label>
             <input
               id="debug-excel-files"
@@ -1511,7 +1499,7 @@ export default function UploadPage() {
         </section>
       </details>
 
-      <section aria-label="Manual KPI snapshot">
+      <section className="upload-section" aria-label="Manual KPI snapshot">
         <h2>Form snapshot (reference)</h2>
         <pre>{JSON.stringify(manualSnapshot, null, 2)}</pre>
       </section>
