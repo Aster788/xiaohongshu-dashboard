@@ -1,8 +1,5 @@
 import type { PerformanceOverviewMetricDTO } from "@/lib/dashboard/types";
 
-/** When `pctChange` is null (no prior window), show alternating mock deltas for layout review. */
-const MOCK_COMPARISON_PCT = 10;
-
 function formatMetricValue(metric: PerformanceOverviewMetricDTO): string {
   const value = metric.current;
   if (value == null) return "—";
@@ -34,23 +31,17 @@ function deltaIconForTrend(trend: PerformanceOverviewMetricDTO["trend"]): string
   return "•";
 }
 
-/** Card modifier class + row content: real metrics when `pctChange` is set; else mock ±10% by index. */
 function resolveComparisonDisplay(
   metric: PerformanceOverviewMetricDTO,
-  index: number,
 ): { cardTrend: PerformanceOverviewMetricDTO["trend"]; icon: string; valueText: string } {
-  if (metric.pctChange != null) {
-    return {
-      cardTrend: metric.trend,
-      icon: deltaIconForTrend(metric.trend),
-      valueText: formatPctChange(metric),
-    };
+  if (metric.pctChange == null) {
+    return { cardTrend: "flat", icon: "•", valueText: "—" };
   }
-  const mockUp = index % 2 === 0;
+
   return {
-    cardTrend: mockUp ? "up" : "down",
-    icon: mockUp ? "▲" : "▼",
-    valueText: mockUp ? `+${MOCK_COMPARISON_PCT}%` : `-${MOCK_COMPARISON_PCT}%`,
+    cardTrend: metric.trend,
+    icon: deltaIconForTrend(metric.trend),
+    valueText: formatPctChange(metric),
   };
 }
 
@@ -61,8 +52,8 @@ export function PerformanceOverviewMetrics({
 }) {
   return (
     <div className="performance-overview-grid" aria-label="Performance overview metrics">
-      {metrics.map((metric, index) => {
-        const cmp = resolveComparisonDisplay(metric, index);
+      {metrics.map((metric) => {
+        const cmp = resolveComparisonDisplay(metric);
         return (
           <article
             key={metric.kind}

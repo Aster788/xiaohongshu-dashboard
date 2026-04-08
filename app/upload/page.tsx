@@ -4,14 +4,25 @@ import { upload } from "@vercel/blob/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mergeWorkbookParseResults } from "@/lib/excel/workbookMerge";
 import type { WorkbookParseResult } from "@/lib/excel/workbookTypes";
+import { parseWorkbookPreview } from "@/lib/upload/debugClient";
+import { fetchSettings, saveSettings, type SettingsResponse } from "@/lib/upload/settingsClient";
 import { mapWithConcurrency } from "@/lib/upload/async";
 import {
-  parseUploadJobStatusResponse,
   shouldPollUploadJob,
   type ClientUploadJobStatusResponse,
   type UploadMergeSnapshot,
 } from "@/lib/upload/clientStatus";
+import {
+  fetchNotesList,
+  patchNotePostUrl,
+  type NoteListItem,
+} from "@/lib/upload/notesClient";
 import { buildUploadBlobPath } from "@/lib/upload/progress";
+import {
+  fetchUploadStatus,
+  kickoffUpload,
+  type QueuedUploadJob,
+} from "@/lib/upload/uploadClient";
 
 const NOTES_PAGE_SIZE = 20;
 
@@ -22,143 +33,12 @@ type ManualKpi = {
   launchDate: string;
 };
 
-type SettingsResponse = {
-  followers: number;
-  totalPosts: number;
-  likesAndSaves: number;
-  launchDate: string;
-};
-
-type NoteListItem = {
-  id: string;
-  title: string;
-  publishedDate: string;
-  format: string | null;
-  impressions: string | null;
-  views: number | null;
-  likes: number | null;
-  comments: number | null;
-  saves: number | null;
-  shares: number | null;
-  followerGain: number | null;
-  postUrl: string | null;
-};
-
-type TableMergeStats = {
-  inserted: number;
-  updated: number;
-  untouched: number;
-};
-
-type QueuedUploadJob = {
-  jobId: string;
-  status: "queued";
-  filesQueued: number;
-  totalBytes: number;
-  kpiSaved: boolean;
-  sources: Array<{
-    fileName: string;
-    pathname: string;
-    size: number;
-  }>;
-};
-
 const emptyManual: ManualKpi = {
   followersTotal: "",
   likesAndSavesTotal: "",
   totalPosts: "",
   launchDate: "",
 };
-
-function isSettingsResponse(x: unknown): x is SettingsResponse {
-  if (!x || typeof x !== "object") return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.followers === "number" &&
-    typeof o.totalPosts === "number" &&
-    typeof o.likesAndSaves === "number" &&
-    typeof o.launchDate === "string"
-  );
-}
-
-function isNoteListItem(x: unknown): x is NoteListItem {
-  if (!x || typeof x !== "object") return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.id === "string" &&
-    typeof o.title === "string" &&
-    typeof o.publishedDate === "string"
-  );
-}
-
-function isNotesListResponse(
-  x: unknown,
-): x is { items: NoteListItem[]; page: number; limit: number; total: number } {
-  if (!x || typeof x !== "object") return false;
-  const o = x as Record<string, unknown>;
-  return (
-    Array.isArray(o.items) &&
-    o.items.every(isNoteListItem) &&
-    typeof o.page === "number" &&
-    typeof o.limit === "number" &&
-    typeof o.total === "number"
-  );
-}
-
-function isTableMergeStats(x: unknown): x is TableMergeStats {
-  if (!x || typeof x !== "object") return false;
-  const o = x as Record<string, unknown>;
-  return (
-    typeof o.inserted === "number" &&
-    typeof o.updated === "number" &&
-    typeof o.untouched === "number"
-  );
-}
-
-function parseQueuedUploadJob(data: unknown): QueuedUploadJob | null {
-  if (!data || typeof data !== "object") return null;
-  const o = data as Record<string, unknown>;
-  if (
-    typeof o.jobId !== "string" ||
-    o.status !== "queued" ||
-    typeof o.filesQueued !== "number" ||
-    typeof o.totalBytes !== "number" ||
-    typeof o.kpiSaved !== "boolean" ||
-    !Array.isArray(o.sources)
-  ) {
-    return null;
-  }
-
-  const sources = o.sources.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const row = item as Record<string, unknown>;
-    if (
-      typeof row.fileName !== "string" ||
-      typeof row.pathname !== "string" ||
-      typeof row.size !== "number"
-    ) {
-      return [];
-    }
-    return [
-      {
-        fileName: row.fileName,
-        pathname: row.pathname,
-        size: row.size,
-      },
-    ];
-  });
-
-  if (sources.length !== o.sources.length) return null;
-
-  return {
-    jobId: o.jobId,
-    status: "queued",
-    filesQueued: o.filesQueued,
-    totalBytes: o.totalBytes,
-    kpiSaved: o.kpiSaved,
-    sources,
-  };
-}
 
 /** Same rules as PUT /api/settings: all four fields required and valid. */
 function validateManualKpiForSave(manual: ManualKpi): string | null {
@@ -266,45 +146,27 @@ export default function UploadPage() {
     const seq = ++loadSeq.current;
     const secret = uploadSecret.trim();
     const t = window.setTimeout(() => {
-      const headers: HeadersInit = {};
-      if (secret) {
-        headers.Authorization = `Bearer ${secret}`;
-      }
-
       void (async () => {
         try {
-          const res = await fetch("/api/settings", { headers });
-          const data: unknown = await res.json().catch(() => null);
+          const result = await fetchSettings(secret);
 
           if (seq !== loadSeq.current) return;
 
-          if (!res.ok) {
-            if (res.status === 401 && secret) {
+          if (!result.ok) {
+            if (result.status === 401 && secret) {
               setSettingsHint("Could not load saved KPIs. Check the upload secret.");
-            } else if (res.status === 401 && !secret) {
+            } else if (result.status === 401 && !secret) {
               setSettingsHint(
                 "Enter the upload secret to load saved KPIs from the server.",
               );
             } else {
-              const msg =
-                data &&
-                typeof data === "object" &&
-                "error" in data &&
-                typeof (data as { error: unknown }).error === "string"
-                  ? (data as { error: string }).error
-                  : `Request failed (${res.status})`;
-              setSettingsHint(msg);
+              setSettingsHint(result.error);
             }
             return;
           }
 
-          if (!isSettingsResponse(data)) {
-            setSettingsHint("Unexpected settings response.");
-            return;
-          }
-
           setSettingsHint(null);
-          applySettingsToForm(data);
+          applySettingsToForm(result.data);
         } catch {
           if (seq === loadSeq.current) {
             setSettingsHint("Network error while loading settings.");
@@ -323,43 +185,29 @@ export default function UploadPage() {
       setNotesHint(null);
     }
     const { secret, filters, page } = notesQueryRef.current;
-    const headers: HeadersInit = {};
-    if (secret) {
-      headers.Authorization = `Bearer ${secret}`;
-    }
-    const params = new URLSearchParams();
-    if (filters.q) params.set("q", filters.q);
-    if (filters.year) params.set("year", filters.year);
-    if (filters.from) params.set("from", filters.from);
-    if (filters.to) params.set("to", filters.to);
-    params.set("page", String(page));
-    params.set("limit", String(NOTES_PAGE_SIZE));
-
     try {
-      const res = await fetch(`/api/notes?${params.toString()}`, {
-        headers,
-        cache: "no-store",
-      });
-      const data: unknown = await res.json().catch(() => null);
-
       if (seq !== notesLoadSeq.current) {
         return;
       }
 
-      if (!res.ok) {
-        if (res.status === 401 && secret) {
+      const result = await fetchNotesList(secret, {
+        q: filters.q,
+        year: filters.year,
+        from: filters.from,
+        to: filters.to,
+        page,
+        limit: NOTES_PAGE_SIZE,
+      });
+      if (seq !== notesLoadSeq.current) {
+        return;
+      }
+      if (!result.ok) {
+        if (result.status === 401 && secret) {
           setNotesHint("Unauthorized. Check the upload secret.");
-        } else if (res.status === 401 && !secret) {
+        } else if (result.status === 401 && !secret) {
           setNotesHint("Enter the upload secret to load notes for Post links.");
         } else {
-          const msg =
-            data &&
-            typeof data === "object" &&
-            "error" in data &&
-            typeof (data as { error: unknown }).error === "string"
-              ? (data as { error: string }).error
-              : `Request failed (${res.status})`;
-          setNotesHint(msg);
+          setNotesHint(result.error);
         }
         setNotesItems([]);
         setNotesTotal(0);
@@ -368,20 +216,11 @@ export default function UploadPage() {
         return;
       }
 
-      if (!isNotesListResponse(data)) {
-        setNotesHint("Unexpected notes response.");
-        setNotesItems([]);
-        setNotesTotal(0);
-        setDraftUrls({});
-        setPostLinkRowHint({});
-        return;
-      }
-
-      setNotesItems(data.items);
-      setNotesTotal(data.total);
+      setNotesItems(result.data.items);
+      setNotesTotal(result.data.total);
       setDraftUrls(
         Object.fromEntries(
-          data.items.map((item) => [item.id, item.postUrl ?? ""]),
+          result.data.items.map((item) => [item.id, item.postUrl ?? ""]),
         ),
       );
       setPostLinkRowHint({});
@@ -405,8 +244,6 @@ export default function UploadPage() {
       void fetchNotesListNow();
     }, 300);
     return () => window.clearTimeout(t);
-    // fetchNotesListNow reads notesQueryRef + state setters only; listing deps match filter inputs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional debounce trigger set
   }, [uploadSecret, appliedNotesFilters, notesPage]);
 
   useEffect(() => {
@@ -415,22 +252,15 @@ export default function UploadPage() {
     let cancelled = false;
     let timer: number | null = null;
     const secret = uploadSecret.trim();
-    const headers: HeadersInit = {};
-    if (secret) {
-      headers.Authorization = `Bearer ${secret}`;
-    }
 
     const refreshAfterCompletion = async (status: ClientUploadJobStatusResponse) => {
       if (completedUploadJobIdRef.current === status.jobId) return;
       completedUploadJobIdRef.current = status.jobId;
 
       if (status.result?.kpiSaved) {
-        const refreshed = await fetch("/api/settings", { headers }).catch(() => null);
+        const refreshed = await fetchSettings(secret).catch(() => null);
         if (!cancelled && refreshed?.ok) {
-          const data: unknown = await refreshed.json().catch(() => null);
-          if (isSettingsResponse(data)) {
-            applySettingsToForm(data);
-          }
+          applySettingsToForm(refreshed.data);
         }
       }
 
@@ -448,43 +278,27 @@ export default function UploadPage() {
 
     const pollStatus = async () => {
       try {
-        const res = await fetch(`/api/upload/${queuedUploadJob.jobId}`, {
-          headers,
-          cache: "no-store",
-        });
-        const data: unknown = await res.json().catch(() => null);
-
         if (cancelled) return;
 
-        if (res.status === 401) {
+        const result = await fetchUploadStatus(secret, queuedUploadJob.jobId);
+
+        if (!result.ok && result.status === 401) {
           setUploadError("Unauthorized. Check the upload secret.");
           return;
         }
 
-        if (!res.ok) {
-          const msg =
-            data &&
-            typeof data === "object" &&
-            "error" in data &&
-            typeof (data as { error: unknown }).error === "string"
-              ? (data as { error: string }).error
-              : `Status check failed (${res.status})`;
-
-          if (res.status >= 500) {
-            setUploadError(`${msg}. Retrying…`);
+        if (!result.ok) {
+          if (result.status >= 500) {
+            setUploadError(`${result.error}. Retrying…`);
             schedulePoll(2000);
             return;
           }
 
-          setUploadError(msg);
+          setUploadError(result.error);
           return;
         }
 
-        const parsed = parseUploadJobStatusResponse(data);
-        if (!parsed) {
-          setUploadError("Unexpected upload job status response.");
-          return;
-        }
+        const parsed = result.data;
 
         setUploadJobStatus(parsed);
         if (parsed.result) {
@@ -515,8 +329,6 @@ export default function UploadPage() {
         window.clearTimeout(timer);
       }
     };
-    // fetchNotesListNow reads refs/state-only internals and is intentionally reused here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queuedUploadJob, uploadSecret, applySettingsToForm]);
 
   async function persistUpload(fileList: FileList | null) {
@@ -597,46 +409,23 @@ export default function UploadPage() {
           : {}),
       };
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: {
-          ...headers,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(kickoffPayload),
-      });
-      const data: unknown = await res.json().catch(() => null);
-
-      if (res.status === 401) {
+      const kickoff = await kickoffUpload(secret, kickoffPayload);
+      if (!kickoff.ok && kickoff.status === 401) {
         setUploadError("Unauthorized. Check the upload secret.");
         return;
       }
 
-      if (!res.ok) {
-        const msg =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : `Upload failed (${res.status})`;
-        setUploadError(msg);
+      if (!kickoff.ok) {
+        setUploadError(kickoff.error);
         return;
       }
 
-      const queued = parseQueuedUploadJob(data);
-      if (!queued) {
-        setUploadError("Unexpected upload response.");
-        return;
-      }
+      const queued = kickoff.data;
       setQueuedUploadJob(queued);
 
       if (queued.kpiSaved) {
-        const refreshed = await fetch("/api/settings", { headers }).catch(() => null);
-        if (refreshed?.ok) {
-          const s: unknown = await refreshed.json().catch(() => null);
-          if (isSettingsResponse(s)) applySettingsToForm(s);
-        }
+        const refreshed = await fetchSettings(secret).catch(() => null);
+        if (refreshed?.ok) applySettingsToForm(refreshed.data);
       }
     } catch {
       setUploadError("Network error.");
@@ -663,40 +452,22 @@ export default function UploadPage() {
     setDebugLoading(true);
 
     const secret = uploadSecret.trim();
-    const headers: HeadersInit = {};
-    if (secret) {
-      headers.Authorization = `Bearer ${secret}`;
-    }
 
     try {
       const parts: { fileName: string; result: WorkbookParseResult }[] = [];
 
       for (const file of files) {
-        const body = new FormData();
-        body.set("file", file);
-
-        const res = await fetch("/api/excel/parse", {
-          method: "POST",
-          body,
-          headers,
-        });
-        const data: unknown = await res.json().catch(() => null);
-
-        if (!res.ok) {
+        const parsed = await parseWorkbookPreview(secret, file);
+        if (!parsed.ok) {
           const msg =
-            res.status === 401
+            parsed.status === 401
               ? "Unauthorized. Check the upload secret."
-              : data &&
-                  typeof data === "object" &&
-                  "error" in data &&
-                  typeof (data as { error: unknown }).error === "string"
-                ? (data as { error: string }).error
-                : `Request failed (${res.status})`;
+              : parsed.error;
           setDebugError(`${file.name}: ${msg}`);
           return;
         }
 
-        parts.push({ fileName: file.name, result: data as WorkbookParseResult });
+        parts.push({ fileName: file.name, result: parsed.data });
       }
 
       setDebugParsed(mergeWorkbookParseResults(parts));
@@ -712,10 +483,6 @@ export default function UploadPage() {
     setSettingsHint(null);
 
     const secret = uploadSecret.trim();
-    const headers: HeadersInit = { "Content-Type": "application/json" };
-    if (secret) {
-      headers.Authorization = `Bearer ${secret}`;
-    }
 
     const kpiErr = validateManualKpiForSave(manual);
     if (kpiErr) {
@@ -730,35 +497,20 @@ export default function UploadPage() {
     const launchDate = manual.launchDate.trim();
 
     try {
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers,
-        body: JSON.stringify({
-          followers,
-          totalPosts,
-          likesAndSaves,
-          launchDate,
-        }),
+      const result = await saveSettings(secret, {
+        followers,
+        totalPosts,
+        likesAndSaves,
+        launchDate,
       });
-      const data: unknown = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        const msg =
-          res.status === 401
-            ? "Unauthorized. Check the upload secret."
-            : data &&
-                typeof data === "object" &&
-                "error" in data &&
-                typeof (data as { error: unknown }).error === "string"
-              ? (data as { error: string }).error
-              : `Save failed (${res.status})`;
-        setSettingsHint(msg);
+      if (!result.ok) {
+        setSettingsHint(
+          result.status === 401 ? "Unauthorized. Check the upload secret." : result.error,
+        );
         return;
       }
-
-      if (isSettingsResponse(data)) {
-        applySettingsToForm(data);
-      }
+      applySettingsToForm(result.data);
       setSettingsHint("KPIs saved.");
     } catch {
       setSettingsHint("Network error while saving KPIs.");
@@ -794,72 +546,32 @@ export default function UploadPage() {
       delete next[noteId];
       return next;
     });
-    const secret = uploadSecret.trim();
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
-    if (secret) {
-      headers.Authorization = `Bearer ${secret}`;
-    }
-
     try {
-      const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ postUrl: draft }),
-      });
-      const data: unknown = await res.json().catch(() => null);
-
-      if (res.status === 401) {
+      const result = await patchNotePostUrl(uploadSecret.trim(), noteId, draft);
+      if (!result.ok && result.status === 401) {
         setPostLinkRowHint((prev) => ({
           ...prev,
           [noteId]: "Unauthorized. Check the upload secret.",
         }));
         return;
       }
-
-      if (!res.ok) {
-        const msg =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : `Save failed (${res.status})`;
-        setPostLinkRowHint((prev) => ({ ...prev, [noteId]: msg }));
+      if (!result.ok) {
+        setPostLinkRowHint((prev) => ({
+          ...prev,
+          [noteId]: result.error ?? "Save failed.",
+        }));
         return;
       }
-
-      if (
-        data &&
-        typeof data === "object" &&
-        "id" in data &&
-        "postUrl" in data &&
-        typeof (data as { id: unknown }).id === "string"
-      ) {
-        notesLoadSeq.current += 1;
-        const rawPu = (data as { postUrl: unknown }).postUrl;
-        const postUrl =
-          rawPu === null
-            ? null
-            : typeof rawPu === "string"
-              ? rawPu
-              : null;
-        setNotesItems((rows) =>
-          rows.map((r) => (r.id === noteId ? { ...r, postUrl } : r)),
-        );
-        setDraftUrls((d) => ({ ...d, [noteId]: postUrl ?? "" }));
-        setNotesLoading(false);
-        setPostLinkRowHint((prev) => ({
-          ...prev,
-          [noteId]: "Post link saved.",
-        }));
-      } else {
-        setPostLinkRowHint((prev) => ({
-          ...prev,
-          [noteId]: "Unexpected save response.",
-        }));
-      }
+      notesLoadSeq.current += 1;
+      setNotesItems((rows) =>
+        rows.map((r) => (r.id === noteId ? { ...r, postUrl: result.postUrl ?? null } : r)),
+      );
+      setDraftUrls((d) => ({ ...d, [noteId]: result.postUrl ?? "" }));
+      setNotesLoading(false);
+      setPostLinkRowHint((prev) => ({
+        ...prev,
+        [noteId]: "Post link saved.",
+      }));
     } catch {
       setPostLinkRowHint((prev) => ({
         ...prev,
@@ -878,39 +590,20 @@ export default function UploadPage() {
       delete next[noteId];
       return next;
     });
-    const secret = uploadSecret.trim();
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-    };
-    if (secret) {
-      headers.Authorization = `Bearer ${secret}`;
-    }
-
     try {
-      const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
-        method: "PATCH",
-        headers,
-        body: '{"postUrl":null}',
-      });
-      const data: unknown = await res.json().catch(() => null);
-
-      if (res.status === 401) {
+      const result = await patchNotePostUrl(uploadSecret.trim(), noteId, null);
+      if (!result.ok && result.status === 401) {
         setPostLinkRowHint((prev) => ({
           ...prev,
           [noteId]: "Unauthorized. Check the upload secret.",
         }));
         return;
       }
-
-      if (!res.ok) {
-        const msg =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof (data as { error: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : `Clear failed (${res.status})`;
-        setPostLinkRowHint((prev) => ({ ...prev, [noteId]: msg }));
+      if (!result.ok) {
+        setPostLinkRowHint((prev) => ({
+          ...prev,
+          [noteId]: result.error ?? "Clear failed.",
+        }));
         return;
       }
 

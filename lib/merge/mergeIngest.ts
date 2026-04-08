@@ -198,6 +198,7 @@ export async function mergeDomainIntoDb(
   domain: DomainWorkbookResult,
   _runId = "unknown-run",
 ): Promise<MergeIngestResult> {
+  void _runId;
   const notes = domain.notes;
   const daily = domain.accountDaily;
 

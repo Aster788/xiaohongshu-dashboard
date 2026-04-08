@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { TopNotesSortKey } from "@/lib/dashboard/types";
@@ -43,7 +43,7 @@ export function DashboardYearFilter({
   const selectedSortOption =
     SORT_OPTIONS.find((option) => option.value === selectedSort) ?? SORT_OPTIONS[0]!;
 
-  function createHref(year: number | null, sort: TopNotesSortKey) {
+  const createHref = useCallback((year: number | null, sort: TopNotesSortKey) => {
     const params = new URLSearchParams();
     if (year != null) {
       params.set("year", String(year));
@@ -53,13 +53,13 @@ export function DashboardYearFilter({
     }
     const qs = params.toString();
     return qs ? `${pathname}?${qs}` : pathname;
-  }
+  }, [pathname]);
 
-  function prefetchHref(href: string) {
+  const prefetchHref = useCallback((href: string) => {
     if (prefetchedHrefsRef.current.has(href)) return;
     prefetchedHrefsRef.current.add(href);
     router.prefetch(href);
-  }
+  }, [router]);
 
   function handleSortSelect(nextSort: TopNotesSortKey) {
     setSortOpen(false);
@@ -100,7 +100,7 @@ export function DashboardYearFilter({
     for (const option of SORT_OPTIONS) {
       prefetchHref(createHref(selectedNum, option.value));
     }
-  }, [onYearChange, onSortChange, selectedNum, selectedSort, years, pathname]);
+  }, [onYearChange, onSortChange, selectedNum, selectedSort, years, createHref, prefetchHref]);
 
   return (
     <div className="top-filter-bar">
