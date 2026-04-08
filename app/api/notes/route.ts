@@ -1,22 +1,12 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { badRequest, formatDateOnlyUtc, unauthorizedJson } from "@/lib/api/response";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
 import { parseIsoDateOnly } from "@/lib/excel/chineseDate";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
-function formatDateOnlyUtc(d: Date): string {
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 function parsePageLimit(
   pageRaw: string | null,
@@ -38,7 +28,7 @@ function parsePageLimit(
  */
 export async function GET(request: Request) {
   if (!isUploadRequestAuthorized(request)) {
-    return unauthorized();
+    return unauthorizedJson();
   }
 
   const url = new URL(request.url);
@@ -60,7 +50,7 @@ export async function GET(request: Request) {
   if (yearStr !== null && yearStr !== "") {
     const y = Number.parseInt(yearStr, 10);
     if (!Number.isFinite(y) || y < 1 || y > 9999) {
-      return NextResponse.json({ error: "Invalid year" }, { status: 400 });
+      return badRequest("Invalid year");
     }
     and.push({
       publishedDate: {
@@ -73,7 +63,7 @@ export async function GET(request: Request) {
   if (fromStr !== null && fromStr !== "") {
     const d = parseIsoDateOnly(fromStr);
     if (!d) {
-      return NextResponse.json({ error: "Invalid from" }, { status: 400 });
+      return badRequest("Invalid from");
     }
     and.push({ publishedDate: { gte: d } });
   }
@@ -81,7 +71,7 @@ export async function GET(request: Request) {
   if (toStr !== null && toStr !== "") {
     const d = parseIsoDateOnly(toStr);
     if (!d) {
-      return NextResponse.json({ error: "Invalid to" }, { status: 400 });
+      return badRequest("Invalid to");
     }
     and.push({ publishedDate: { lte: d } });
   }

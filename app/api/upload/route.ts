@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { start } from "workflow/api";
+import {
+  badRequest,
+  unauthorizedJson,
+  unsupportedMediaType,
+} from "@/lib/api/response";
 import { isUploadRequestAuthorized } from "@/lib/auth/uploadSecret";
 import { parseUploadStartPayload } from "@/lib/upload/startPayload";
 import { uploadBlobSourcesWorkflow } from "@/workflows/uploadBlobSources";
@@ -7,32 +12,25 @@ import { uploadBlobSourcesWorkflow } from "@/workflows/uploadBlobSources";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-function unauthorized() {
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-}
-
 function statusForUploadPayloadError(message: string): number {
   return /too large/i.test(message) ? 413 : 400;
 }
 
 export async function POST(request: Request) {
   if (!isUploadRequestAuthorized(request)) {
-    return unauthorized();
+    return unauthorizedJson();
   }
 
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
-    return NextResponse.json(
-      { error: "Use the Blob upload kickoff JSON payload" },
-      { status: 415 },
-    );
+    return unsupportedMediaType("Use the Blob upload kickoff JSON payload");
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return badRequest("Invalid JSON");
   }
 
   const parsed = parseUploadStartPayload(body);
