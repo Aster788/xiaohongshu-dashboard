@@ -23,12 +23,15 @@ export function DashboardYearFilter({
   selectedSort,
   onYearChange,
   onSortChange,
+  sortTieBreakHint,
 }: {
   years: number[];
   selectedYear: number | null;
   selectedSort: TopNotesSortKey;
   onYearChange?: (year: number | null) => void;
   onSortChange?: (sort: TopNotesSortKey) => void;
+  /** Shown in a hover tooltip next to “Sorted by” (e.g. tie-break rules). */
+  sortTieBreakHint?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -153,6 +156,22 @@ export function DashboardYearFilter({
       </nav>
 
       <div className="sort-filter" ref={dropdownRef}>
+        {sortTieBreakHint ? (
+          <div className="sort-tiebreak-wrap">
+            <button type="button" className="sort-tiebreak-trigger">
+              <span className="sr-only">{sortTieBreakHint}</span>
+              <span className="sort-tiebreak-mark" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="11" height="11" aria-hidden="true">
+                  <rect x="10.75" y="3" width="2.5" height="13" rx="1.25" fill="currentColor" />
+                  <circle cx="12" cy="20" r="2.35" fill="currentColor" />
+                </svg>
+              </span>
+            </button>
+            <div className="sort-tiebreak-tooltip" aria-hidden="true">
+              {sortTieBreakHint}
+            </div>
+          </div>
+        ) : null}
         <span className="sort-filter-label">Sorted by</span>
         <button
           type="button"

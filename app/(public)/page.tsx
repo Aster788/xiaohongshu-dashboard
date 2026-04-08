@@ -5,10 +5,16 @@ import {
 } from "@/components/dashboard/DashboardTrendTabs";
 import { PerformanceOverviewMetrics } from "@/components/dashboard/PerformanceOverviewMetrics";
 import { TopPostsPanel } from "@/components/dashboard/TopPostsPanel";
+import {
+  fallbackAnchorIsoFromTrendEnds,
+  performanceComparisonWindowFromAnchorIso,
+} from "@/lib/dashboard/comparisonWindow";
 import { getDashboardSnapshotCached } from "@/lib/dashboard/queries";
+import { computeContentTrendDateRange } from "@/lib/dashboard/trendDateRange";
 import type { TopNotesSortKey } from "@/lib/dashboard/types";
 import type { Metadata } from "next";
 import Image from "next/image";
+import { preconnect, prefetchDNS } from "react-dom";
 
 export const metadata: Metadata = {
   title: "Xiaohongshu Analytics Dashboard",
@@ -43,6 +49,7 @@ function formatInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/** Calendar labels for stored YYYY-MM-DD keys; shown in China Standard Time (Beijing). */
 function formatDateFromIso(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const date = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1));
@@ -50,8 +57,19 @@ function formatDateFromIso(iso: string): string {
     month: "short",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: "Asia/Shanghai",
   });
+}
+
+function formatPerformanceComparisonNote(window: {
+  priorStartIso: string;
+  priorEndIso: string;
+  currentStartIso: string;
+  currentEndIso: string;
+}): string {
+  const a = `${formatDateFromIso(window.priorStartIso)}–${formatDateFromIso(window.priorEndIso)}`;
+  const b = `${formatDateFromIso(window.currentStartIso)}–${formatDateFromIso(window.currentEndIso)}`;
+  return `Comparison: ${a} vs ${b}`;
 }
 
 function SectionHeading({
@@ -83,23 +101,39 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ year?: string | string[]; sort?: string | string[] }>;
 }) {
+  prefetchDNS("https://www.xiaohongshu.com");
+  preconnect("https://www.xiaohongshu.com", { crossOrigin: "anonymous" });
+
   const sp = await searchParams;
   const yearFilter = parseYearFilter(sp.year);
   const sortKey = parseTopNotesSort(sp.sort);
   const snap = await getDashboardSnapshotCached(yearFilter, sortKey);
   const followerSubtitle =
-    "Follower growth from account creation date to the latest update date.";
-  const trendStartIso = [
-    snap.viewsTrend[0]?.dateIso,
-    snap.likesAndSavesTrend[0]?.dateIso,
-    snap.coverCtrTrend[0]?.dateIso,
-    snap.publishTrend[0]?.dateIso,
-  ]
-    .filter((v): v is string => Boolean(v))
-    .sort()[0];
-  const trendSubtitle = trendStartIso
-    ? `Data since ${formatDateFromIso(trendStartIso)}`
+    "Follower growth from account creation to the most recent date in the uploaded data, which may not coincide with the most recent post date.";
+
+  const trendRange =
+    snap.contentTrendDateRange ??
+    computeContentTrendDateRange(
+      snap.viewsTrend,
+      snap.likesAndSavesTrend,
+      snap.coverCtrTrend,
+      snap.publishTrend,
+    );
+  const trendSubtitle = trendRange
+    ? `Daily data from ${formatDateFromIso(trendRange.startIso)} to ${formatDateFromIso(trendRange.endIso)}.`
     : "No trend data yet";
+
+  const performanceComparisonWindow =
+    snap.performanceComparisonWindow ??
+    (() => {
+      const anchor = fallbackAnchorIsoFromTrendEnds(
+        snap.viewsTrend,
+        snap.likesAndSavesTrend,
+        snap.coverCtrTrend,
+        snap.publishTrend,
+      );
+      return anchor ? performanceComparisonWindowFromAnchorIso(anchor) : null;
+    })();
   const trendTabs: TrendTab[] = [
     {
       key: "views",
@@ -151,7 +185,7 @@ export default async function DashboardPage({
         <div className="hero-wave-band">
           <a
             className="hero-profile-link"
-            href="https://xhslink.com/m/7wTuTv3kElG"
+            href="https://www.xiaohongshu.com/user/profile/61f67b19000000001000a0ff"
             target="_blank"
             rel="noopener noreferrer"
           >
@@ -184,7 +218,7 @@ export default async function DashboardPage({
               <div className="kpi-value">{formatInt(snap.kpi.totalPosts)}</div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-label">likes &amp; saves</div>
+              <div className="kpi-label">total likes &amp; saves</div>
               <div className="kpi-value">{formatInt(snap.kpi.likesAndSaves)}</div>
             </div>
             <div className="kpi-card">
@@ -193,6 +227,11 @@ export default async function DashboardPage({
             </div>
           </div>
           <PerformanceOverviewMetrics metrics={snap.performanceOverview} />
+          {performanceComparisonWindow ? (
+            <p className="performance-overview-period-note">
+              {formatPerformanceComparisonNote(performanceComparisonWindow)}
+            </p>
+          ) : null}
         </div>
       </section>
 
@@ -205,7 +244,7 @@ export default async function DashboardPage({
         />
         <FollowerLineChart
           data={snap.followerPoints}
-          ariaLabel="Follower count by day from account creation through the latest update date in ingested data."
+          ariaLabel="Follower count by day from account creation to the most recent date in the uploaded data, which may not coincide with the most recent post date."
         />
         <p className="section-footnote">
           <strong>Note:</strong> Due to Xiaohongshu&apos;s official data export
@@ -233,9 +272,7 @@ export default async function DashboardPage({
         <SectionHeading
           index="04"
           title="Top 10 Posts"
-          subtitle={`Default: ranked by views
-If values are equal, newer posts come first, then views, impressions, likes & saves, and new followers.
-Due to Xiaohongshu export limitations, this section only displays and analyzes posts published on or after Sep 26, 2025.`}
+          subtitle="Due to Xiaohongshu export limitations, this section only displays and analyzes posts published on or after Sep 26, 2025."
           headingId="top-heading"
         />
         <TopPostsPanel

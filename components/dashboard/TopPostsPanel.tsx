@@ -33,6 +33,9 @@ function formatPublishedDate(isoDate: string): string {
   });
 }
 
+const SORT_TIE_BREAK_HINT =
+  "If values are equal, newer posts come first, then views, impressions, likes & saves, and new followers.";
+
 function likesAndSaves(row: TopNoteRowDTO): number {
   return (row.likes ?? 0) + (row.saves ?? 0);
 }
@@ -170,6 +173,7 @@ export function TopPostsPanel({
         selectedSort={selectedSort}
         onYearChange={setSelectedYear}
         onSortChange={setSelectedSort}
+        sortTieBreakHint={SORT_TIE_BREAK_HINT}
       />
       {rows.length === 0 ? (
         <p className="empty-hint">No notes match this filter yet.</p>

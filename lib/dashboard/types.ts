@@ -60,6 +60,20 @@ export type PerformanceOverviewMetricDTO = {
   trend: "up" | "down" | "flat";
 };
 
+/** UTC calendar-day bounds for Performance Overview rolling 30d vs prior 30d comparison. */
+export type PerformanceComparisonWindowDTO = {
+  currentStartIso: string;
+  currentEndIso: string;
+  priorStartIso: string;
+  priorEndIso: string;
+};
+
+/** Inclusive span across the four Content Performance trend series (may differ per series). */
+export type ContentTrendDateRangeDTO = {
+  startIso: string;
+  endIso: string;
+};
+
 export type TopNotesSortKey =
   | "views"
   | "impressions"
@@ -85,6 +99,8 @@ export type TopNoteRowDTO = {
 export type DashboardSnapshotDTO = {
   kpi: DashboardKpiDTO;
   performanceOverview: PerformanceOverviewMetricDTO[];
+  performanceComparisonWindow: PerformanceComparisonWindowDTO | null;
+  contentTrendDateRange: ContentTrendDateRangeDTO | null;
   followerPoints: FollowerPointDTO[];
   coverCtrTrend: TrendPointDTO[];
   /** Daily likes + saves from ingested trend sheets, summed per date. */
