@@ -284,6 +284,18 @@ body {
   display: contents;
 }
 
+.performance-overview-period-note {
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin: 0.65rem 0 0;
+  max-width: 100%;
+  text-align: end;
+  font-family: "DM Sans", sans-serif;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #6b7280;
+}
+
 /** Match `.kpi-card` shell: light surface, purple-tint border, soft shadow. */
 .performance-metric-card {
   display: flex;
@@ -617,6 +629,86 @@ body {
   justify-content: flex-end;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.sort-tiebreak-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: visible;
+}
+
+.sort-tiebreak-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.28rem;
+  height: 1.28rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #6b7280;
+  line-height: 0;
+  cursor: default;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.sort-tiebreak-trigger:hover,
+.sort-tiebreak-trigger:focus-visible {
+  background: #e5e7eb;
+  color: #4b5563;
+  transform: scale(1.06);
+}
+
+.sort-tiebreak-trigger:focus-visible {
+  outline: 2px solid var(--caser-chart-primary);
+  outline-offset: 2px;
+}
+
+.sort-tiebreak-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-tiebreak-mark svg {
+  display: block;
+}
+
+.sort-tiebreak-tooltip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  z-index: 20;
+  width: max-content;
+  max-width: min(18.5rem, calc(100vw - 2.5rem));
+  padding: 0.65rem 0.78rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--caser-border);
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(30, 10, 60, 0.14);
+  font-family: "DM Sans", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.45;
+  color: #374151;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.12s ease,
+    visibility 0.12s ease;
+}
+
+.sort-tiebreak-wrap:hover .sort-tiebreak-tooltip,
+.sort-tiebreak-wrap:focus-within .sort-tiebreak-tooltip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .sort-filter-label {

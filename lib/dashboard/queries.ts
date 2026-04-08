@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
+import { performanceComparisonWindowFromAnchorIso } from "./comparisonWindow";
 import type {
   DashboardSnapshotDTO,
   FollowerPointDTO,
@@ -8,9 +9,13 @@ import type {
   TopNoteRowDTO,
   TrendPointDTO,
 } from "./types";
+import { computeContentTrendDateRange } from "./trendDateRange";
 
 const BURST_NET_THRESHOLD = 15;
 export const DASHBOARD_CACHE_TAG = "dashboard-snapshot";
+
+/** Bump when snapshot shape changes so `unstable_cache` does not serve stale objects. */
+const DASHBOARD_SNAPSHOT_CACHE_REVISION = "2";
 
 const METRIC_PREFIX = {
   netFollower: "follower.net_trend.",
@@ -197,6 +202,21 @@ function makePerformanceMetric(
   };
 }
 
+function emptyPerformanceOverviewMetrics(): PerformanceOverviewMetricDTO[] {
+  const empty = (kind: PerformanceOverviewMetricDTO["kind"], labelZh: string, labelEn: string) =>
+    makePerformanceMetric(kind, labelZh, labelEn, null, null);
+  return [
+    empty("impressions", "曝光量", "impressions"),
+    empty("views", "观看量", "views"),
+    empty("cover-ctr", "封面点击率", "cover ctr"),
+    empty("avg-watch-duration", "平均观看时长", "avg watch duration"),
+    empty("likes", "点赞量", "likes"),
+    empty("saves", "收藏量", "saves"),
+    empty("net-followers", "净涨粉", "net followers"),
+    empty("profile-conv-rate", "主页转粉率", "profile conversion rate"),
+  ];
+}
+
 function buildPerformanceOverviewMetrics(args: {
   impressionsMap: Map<string, number>;
   viewsMap: Map<string, number>;
@@ -206,7 +226,15 @@ function buildPerformanceOverviewMetrics(args: {
   savesMap: Map<string, number>;
   netByDate: Map<string, number>;
   profileConvRateMap: Map<string, number>;
-}): PerformanceOverviewMetricDTO[] {
+}): {
+  metrics: PerformanceOverviewMetricDTO[];
+  window: {
+    currentStartIso: string;
+    currentEndIso: string;
+    priorStartIso: string;
+    priorEndIso: string;
+  } | null;
+} {
   const anchorIso = latestIsoDateFromMaps(
     args.impressionsMap,
     args.viewsMap,
@@ -218,20 +246,8 @@ function buildPerformanceOverviewMetrics(args: {
     args.profileConvRateMap,
   );
 
-  const empty = (kind: PerformanceOverviewMetricDTO["kind"], labelZh: string, labelEn: string) =>
-    makePerformanceMetric(kind, labelZh, labelEn, null, null);
-
   if (!anchorIso) {
-    return [
-      empty("impressions", "曝光量", "impressions"),
-      empty("views", "观看量", "views"),
-      empty("cover-ctr", "封面点击率", "cover ctr"),
-      empty("avg-watch-duration", "平均观看时长", "avg watch duration"),
-      empty("likes", "点赞量", "likes"),
-      empty("saves", "收藏量", "saves"),
-      empty("net-followers", "净涨粉", "net followers"),
-      empty("profile-conv-rate", "主页转粉率", "profile conversion rate"),
-    ];
+    return { metrics: emptyPerformanceOverviewMetrics(), window: null };
   }
 
   const currentEnd = parseIsoDateUTC(anchorIso);
@@ -257,46 +273,51 @@ function buildPerformanceOverviewMetrics(args: {
   const netFollowers = sumWindowMetric(args.netByDate);
   const profileConvRate = avgWindowMetric(args.profileConvRateMap);
 
-  return [
-    makePerformanceMetric(
-      "impressions",
-      "曝光量",
-      "impressions",
-      impressions.current,
-      impressions.prior,
-    ),
-    makePerformanceMetric("views", "观看量", "views", views.current, views.prior),
-    makePerformanceMetric(
-      "cover-ctr",
-      "封面点击率",
-      "cover ctr",
-      coverCtr.current,
-      coverCtr.prior,
-    ),
-    makePerformanceMetric(
-      "avg-watch-duration",
-      "平均观看时长",
-      "avg watch duration",
-      avgWatchDuration.current,
-      avgWatchDuration.prior,
-    ),
-    makePerformanceMetric("likes", "点赞量", "likes", likes.current, likes.prior),
-    makePerformanceMetric("saves", "收藏量", "saves", saves.current, saves.prior),
-    makePerformanceMetric(
-      "net-followers",
-      "净涨粉",
-      "net followers",
-      netFollowers.current,
-      netFollowers.prior,
-    ),
-    makePerformanceMetric(
-      "profile-conv-rate",
-      "主页转粉率",
-      "profile conversion rate",
-      profileConvRate.current,
-      profileConvRate.prior,
-    ),
-  ];
+  const window = performanceComparisonWindowFromAnchorIso(anchorIso);
+
+  return {
+    metrics: [
+      makePerformanceMetric(
+        "impressions",
+        "曝光量",
+        "impressions",
+        impressions.current,
+        impressions.prior,
+      ),
+      makePerformanceMetric("views", "观看量", "views", views.current, views.prior),
+      makePerformanceMetric(
+        "cover-ctr",
+        "封面点击率",
+        "cover ctr",
+        coverCtr.current,
+        coverCtr.prior,
+      ),
+      makePerformanceMetric(
+        "avg-watch-duration",
+        "平均观看时长",
+        "avg watch duration",
+        avgWatchDuration.current,
+        avgWatchDuration.prior,
+      ),
+      makePerformanceMetric("likes", "点赞量", "likes", likes.current, likes.prior),
+      makePerformanceMetric("saves", "收藏量", "saves", saves.current, saves.prior),
+      makePerformanceMetric(
+        "net-followers",
+        "净涨粉",
+        "net followers",
+        netFollowers.current,
+        netFollowers.prior,
+      ),
+      makePerformanceMetric(
+        "profile-conv-rate",
+        "主页转粉率",
+        "profile conversion rate",
+        profileConvRate.current,
+        profileConvRate.prior,
+      ),
+    ],
+    window,
+  };
 }
 
 function buildFollowerCurve(
@@ -493,15 +514,8 @@ export async function getDashboardSnapshot(
     })
     .filter((y) => Number.isInteger(y) && y >= 1970 && y <= 2100);
 
-  return {
-    kpi: {
-      followers: settings.followers,
-      totalPosts: settings.totalPosts,
-      likesAndSaves: settings.likesAndSaves,
-      daysSinceLaunch: daysSinceLaunchUTC(settings.launchDate),
-      launchDateIso: toIsoDateUTC(settings.launchDate),
-    },
-    performanceOverview: buildPerformanceOverviewMetrics({
+  const { metrics: performanceOverview, window: performanceComparisonWindow } =
+    buildPerformanceOverviewMetrics({
       impressionsMap,
       viewsMap,
       coverMap,
@@ -510,16 +524,39 @@ export async function getDashboardSnapshot(
       savesMap,
       netByDate,
       profileConvRateMap,
-    }),
+    });
+
+  const coverCtrTrend = fullDateSpanPoints(coverMap);
+  const likesAndSavesTrend = fullDateSpanPoints(mergeDailyMaps(likesMap, savesMap));
+  const viewsTrend = fullDateSpanPoints(viewsMap);
+  const publishTrend = fullDateSpanPoints(publishMap);
+  const contentTrendDateRange = computeContentTrendDateRange(
+    viewsTrend,
+    likesAndSavesTrend,
+    coverCtrTrend,
+    publishTrend,
+  );
+
+  return {
+    kpi: {
+      followers: settings.followers,
+      totalPosts: settings.totalPosts,
+      likesAndSaves: settings.likesAndSaves,
+      daysSinceLaunch: daysSinceLaunchUTC(settings.launchDate),
+      launchDateIso: toIsoDateUTC(settings.launchDate),
+    },
+    performanceOverview,
+    performanceComparisonWindow,
+    contentTrendDateRange,
     followerPoints: buildFollowerCurve(
       settings.launchDate,
       settings.followers,
       netByDate,
     ),
-    coverCtrTrend: fullDateSpanPoints(coverMap),
-    likesAndSavesTrend: fullDateSpanPoints(mergeDailyMaps(likesMap, savesMap)),
-    viewsTrend: fullDateSpanPoints(viewsMap),
-    publishTrend: fullDateSpanPoints(publishMap),
+    coverCtrTrend,
+    likesAndSavesTrend,
+    viewsTrend,
+    publishTrend,
     years,
     topNotesAll: allTopNoteCandidates.map(mapTopNoteRow),
   };
@@ -532,7 +569,7 @@ export async function getDashboardSnapshotCached(
   const cacheKey = `${yearFilter ?? "all"}:${sortKey}`;
   const cached = unstable_cache(
     () => getDashboardSnapshot(yearFilter, sortKey),
-    ["dashboard-snapshot", cacheKey],
+    ["dashboard-snapshot", DASHBOARD_SNAPSHOT_CACHE_REVISION, cacheKey],
     { revalidate: 120, tags: [DASHBOARD_CACHE_TAG] },
   );
   return cached();
