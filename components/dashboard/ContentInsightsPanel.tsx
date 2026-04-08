@@ -20,7 +20,6 @@ export function ContentInsightsPanel({
             <h3>{insight.title}</h3>
           </div>
           <p>{insight.supportingData}</p>
-          <p className="insight-recommendation">{insight.recommendation}</p>
         </article>
       ))}
     </div>
