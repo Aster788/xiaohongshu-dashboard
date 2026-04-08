@@ -10,9 +10,9 @@ function formatMetricValue(metric: PerformanceOverviewMetricDTO): string {
   switch (metric.kind) {
     case "cover-ctr":
     case "profile-conv-rate":
-      return `${value.toFixed(1)}%`;
+      return `${Math.round(value)}%`;
     case "avg-watch-duration":
-      return `${value.toFixed(1)}s`;
+      return `${Math.round(value)}s`;
     case "net-followers": {
       const rounded = Math.round(value);
       const sign = rounded > 0 ? "+" : "";

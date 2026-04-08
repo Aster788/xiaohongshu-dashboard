@@ -96,6 +96,16 @@ export type TopNoteRowDTO = {
   postUrl: string | null;
 };
 
+export type ContentInsightStrength = "high" | "medium";
+
+export type ContentInsightDTO = {
+  id: string;
+  title: string;
+  supportingData: string;
+  recommendation: string;
+  strength: ContentInsightStrength;
+};
+
 export type DashboardSnapshotDTO = {
   kpi: DashboardKpiDTO;
   performanceOverview: PerformanceOverviewMetricDTO[];
@@ -109,4 +119,5 @@ export type DashboardSnapshotDTO = {
   publishTrend: TrendPointDTO[];
   years: number[];
   topNotesAll: TopNoteRowDTO[];
+  contentInsights: ContentInsightDTO[];
 };
