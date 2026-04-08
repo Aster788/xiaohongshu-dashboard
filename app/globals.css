@@ -1127,6 +1127,10 @@ body {
   gap: 0.9rem;
 }
 
+.insights-list-title-aligned {
+  padding-left: 3.1rem;
+}
+
 .insight-card {
   position: relative;
   padding: 1rem 1.05rem 1rem 1.2rem;
