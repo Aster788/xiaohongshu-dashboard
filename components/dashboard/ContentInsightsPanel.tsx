@@ -10,7 +10,10 @@ export function ContentInsightsPanel({
   }
 
   return (
-    <div className="insights-list" aria-label="Content attractiveness insights">
+    <div
+      className="insights-list insights-list-title-aligned"
+      aria-label="Content attractiveness insights"
+    >
       {insights.map((insight) => (
         <article key={insight.id} className="insight-card">
           <div className="insight-card-head">
