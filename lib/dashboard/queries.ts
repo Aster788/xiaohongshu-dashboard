@@ -1,7 +1,8 @@
-import { unstable_cache } from "next/cache";
+import { unstable_cache, unstable_noStore as noStore } from "next/cache";
 import { prisma } from "@/lib/db";
 import { performanceComparisonWindowFromAnchorIso } from "./comparisonWindow";
 import type {
+  ContentInsightDTO,
   DashboardSnapshotDTO,
   FollowerPointDTO,
   PerformanceOverviewMetricDTO,
@@ -436,6 +437,186 @@ function mapTopNoteRow(n: {
   };
 }
 
+type InsightCandidateNote = {
+  id: string;
+  title: string;
+  format: string | null;
+  views: number | null;
+  likes: number | null;
+  saves: number | null;
+  shares: number | null;
+};
+
+const AUTHORITY_PHRASES = [
+  "top journal",
+  "international sociology journal",
+  "ssci q1",
+  "published paper",
+  "call for papers",
+  "顶尖学术期刊",
+  "国际社会学期刊",
+  "ssci一区",
+  "发表论文",
+  "学术期刊",
+  "论文",
+] as const;
+
+function topByMetric(
+  rows: InsightCandidateNote[],
+  pick: (row: InsightCandidateNote) => number,
+  topN = 10,
+): InsightCandidateNote[] {
+  return [...rows].sort((a, b) => pick(b) - pick(a)).slice(0, topN);
+}
+
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function extractLikelyScholarNames(title: string): string[] {
+  const names = new Set<string>();
+  const pairPattern = /([\u4e00-\u9fff]{2,4})[、和与]([\u4e00-\u9fff]{2,4})/g;
+  const beforeZaiPattern = /([\u4e00-\u9fff]{2,4})在/g;
+
+  for (const match of title.matchAll(pairPattern)) {
+    if (match[1]) names.add(match[1]);
+    if (match[2]) names.add(match[2]);
+  }
+  for (const match of title.matchAll(beforeZaiPattern)) {
+    if (match[1]) names.add(match[1]);
+  }
+  return [...names];
+}
+
+function extractReadableTitleThemes(title: string): string[] {
+  const normalized = normalizeTitle(title);
+  const themes = new Set<string>();
+  if (normalized.includes("call for papers")) themes.add("call for papers");
+  if (normalized.includes("ssci q1") || normalized.includes("ssci一区")) {
+    themes.add("SSCI Q1 positioning");
+  }
+  if (
+    normalized.includes("top journal") ||
+    normalized.includes("顶尖学术期刊") ||
+    normalized.includes("国际社会学期刊")
+  ) {
+    themes.add("journal authority framing");
+  }
+  if (normalized.includes("published paper") || normalized.includes("发表论文")) {
+    themes.add("publication outcome framing");
+  }
+  if (normalized.includes("对比") || normalized.includes("vs") || normalized.includes("versus")) {
+    themes.add("contrast framing");
+  }
+  if (normalized.includes("清单") || normalized.includes("checklist")) {
+    themes.add("checklist framing");
+  }
+  return [...themes];
+}
+
+function titleHasAuthoritySignal(title: string): boolean {
+  const normalized = normalizeTitle(title);
+  return AUTHORITY_PHRASES.some((phrase) => normalized.includes(phrase));
+}
+
+function pct(numerator: number, denominator: number): number {
+  if (denominator <= 0) return 0;
+  return (numerator / denominator) * 100;
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function formatPct(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function buildContentInsights(notes: InsightCandidateNote[]): ContentInsightDTO[] {
+  const usable = notes.filter((n) => (n.views ?? 0) > 0);
+  if (usable.length === 0) {
+    return [
+      {
+        id: "insufficient-data",
+        title: "Not enough data to form reliable insights yet",
+        supportingData: "No posts currently have usable view data.",
+        recommendation:
+          "Upload note-detail sheets with views, likes, saves, and shares first.",
+        strength: "medium",
+      },
+    ];
+  }
+
+  const topViews = topByMetric(usable, (r) => r.views ?? 0, 10);
+  const overallRate = average(
+    usable.map((r) => ((r.likes ?? 0) + (r.saves ?? 0)) / Math.max(1, r.views ?? 0)),
+  );
+
+  const themeCounts = new Map<string, number>();
+  for (const row of topViews) {
+    for (const theme of extractReadableTitleThemes(row.title)) {
+      themeCounts.set(theme, (themeCounts.get(theme) ?? 0) + 1);
+    }
+  }
+  const leadingThemes = [...themeCounts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([theme]) => theme);
+
+  const topViewWithNameSignal = topViews.filter(
+    (row) => extractLikelyScholarNames(row.title).length > 0,
+  );
+  const topViewWithAuthoritySignal = topViews.filter((row) =>
+    titleHasAuthoritySignal(row.title),
+  );
+
+  const highViewLowEngagement = topViews.filter((row) => {
+    const rate = ((row.likes ?? 0) + (row.saves ?? 0)) / Math.max(1, row.views ?? 0);
+    return rate < overallRate;
+  });
+
+  const insights: ContentInsightDTO[] = [];
+  insights.push({
+    id: "title-theme-patterns",
+    title: "Top-view posts tend to follow a few repeatable title angles",
+    supportingData:
+      leadingThemes.length > 0
+        ? `Across high-view posts, the most frequent angles are ${leadingThemes.join(", ")}.`
+        : "High-view posts are more mixed in style right now, so no single headline pattern stands out yet.",
+    recommendation:
+      "Keep one consistent framing pattern in each new post title and avoid mixing too many hooks at once.",
+    strength: leadingThemes.length >= 2 ? "high" : "medium",
+  });
+
+  insights.push({
+    id: "name-vs-authority-driver",
+    title: "Authority cues are currently drawing more attention than name-led titles",
+    supportingData:
+      topViewWithAuthoritySignal.length >= 3
+        ? `${topViewWithAuthoritySignal.length} of the top-view posts use journal/SSCI/published-paper language, while ${topViewWithNameSignal.length} rely on scholar-name mentions.`
+        : "Both authority-led and name-led titles are present, but the sample is still small, so this should be treated as an early signal.",
+    recommendation:
+      "Test two title variants on similar topics: one with scholar names, one with journal/credibility framing, then keep the clearer winner.",
+    strength: topViewWithAuthoritySignal.length >= 3 ? "high" : "medium",
+  });
+
+  insights.push({
+    id: "high-view-low-engagement",
+    title: "Some high-view posts still leave engagement on the table",
+    supportingData:
+      highViewLowEngagement.length > 0
+        ? `${highViewLowEngagement.length} of the top-view posts underperform on saves & likes — high reach, but engagement isn't converting.`
+        : "Most high-view posts are also converting well into saves and likes.",
+    recommendation:
+      "Keep the hook, but strengthen practical payoff in the first screen: clearer takeaway, checklist structure, and one reusable idea.",
+    strength: highViewLowEngagement.length >= 2 ? "high" : "medium",
+  });
+
+  return insights.slice(0, 3);
+}
+
 async function getAllTopNoteCandidates() {
   return prisma.note.findMany({
     select: {
@@ -536,6 +717,17 @@ export async function getDashboardSnapshot(
     coverCtrTrend,
     publishTrend,
   );
+  const contentInsights = buildContentInsights(
+    allTopNoteCandidates.map((n) => ({
+      id: n.id,
+      title: n.title,
+      format: n.format,
+      views: n.views,
+      likes: n.likes,
+      saves: n.saves,
+      shares: n.shares,
+    })),
+  );
 
   return {
     kpi: {
@@ -559,7 +751,25 @@ export async function getDashboardSnapshot(
     publishTrend,
     years,
     topNotesAll: allTopNoteCandidates.map(mapTopNoteRow),
+    contentInsights,
   };
+}
+
+export async function getContentInsightsNoCache(): Promise<ContentInsightDTO[]> {
+  noStore();
+  const notes = await prisma.note.findMany({
+    select: {
+      id: true,
+      title: true,
+      format: true,
+      views: true,
+      likes: true,
+      saves: true,
+      shares: true,
+    },
+    orderBy: { publishedDate: "desc" },
+  });
+  return buildContentInsights(notes);
 }
 
 export async function getDashboardSnapshotCached(

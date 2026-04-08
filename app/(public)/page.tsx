@@ -1,4 +1,6 @@
 import { FollowerLineChart } from "@/components/dashboard/FollowerLineChart";
+import { ContentInsightsPanel } from "@/components/dashboard/ContentInsightsPanel";
+import { HiddenInsightsGate } from "@/components/dashboard/HiddenInsightsGate";
 import {
   DashboardTrendTabs,
   type TrendTab,
@@ -9,7 +11,7 @@ import {
   fallbackAnchorIsoFromTrendEnds,
   performanceComparisonWindowFromAnchorIso,
 } from "@/lib/dashboard/comparisonWindow";
-import { getDashboardSnapshotCached } from "@/lib/dashboard/queries";
+import { getContentInsightsNoCache, getDashboardSnapshotCached } from "@/lib/dashboard/queries";
 import { computeContentTrendDateRange } from "@/lib/dashboard/trendDateRange";
 import type { TopNotesSortKey } from "@/lib/dashboard/types";
 import type { Metadata } from "next";
@@ -107,7 +109,10 @@ export default async function DashboardPage({
   const sp = await searchParams;
   const yearFilter = parseYearFilter(sp.year);
   const sortKey = parseTopNotesSort(sp.sort);
-  const snap = await getDashboardSnapshotCached(yearFilter, sortKey);
+  const [snap, contentInsights] = await Promise.all([
+    getDashboardSnapshotCached(yearFilter, sortKey),
+    getContentInsightsNoCache(),
+  ]);
   const followerSubtitle =
     "Follower growth from account creation to the most recent date in the uploaded data, which may not coincide with the most recent post date.";
 
@@ -268,20 +273,39 @@ export default async function DashboardPage({
         <DashboardTrendTabs tabs={trendTabs} />
       </section>
 
-      <section className="section section-card" aria-labelledby="top-heading">
-        <SectionHeading
-          index="04"
-          title="Top 10 Posts"
-          subtitle="Due to Xiaohongshu export limitations, this section only displays and analyzes posts published on or after Sep 26, 2025."
-          headingId="top-heading"
-        />
-        <TopPostsPanel
-          years={snap.years}
-          initialYear={yearFilter}
-          initialSort={sortKey}
-          notes={snap.topNotesAll}
-        />
-      </section>
+      <HiddenInsightsGate
+        topPostsSection={
+          <section key="top-posts-section" className="section section-card" aria-labelledby="top-heading">
+            <SectionHeading
+              index="04"
+              title="Top 10 Posts"
+              subtitle="Due to Xiaohongshu export limitations, this section only displays and analyzes posts published on or after Sep 26, 2025."
+              headingId="top-heading"
+            />
+            <TopPostsPanel
+              years={snap.years}
+              initialYear={yearFilter}
+              initialSort={sortKey}
+              notes={snap.topNotesAll}
+            />
+          </section>
+        }
+        insightsSection={
+          <section
+            key="content-insights-section"
+            className="section section-card"
+            aria-labelledby="insight-heading"
+          >
+            <SectionHeading
+              index="05"
+              title="Content Attractiveness Insights"
+              subtitle="Data-backed insights generated from uploaded post records, refreshed automatically after each update."
+              headingId="insight-heading"
+            />
+            <ContentInsightsPanel insights={contentInsights} />
+          </section>
+        }
+      />
     </main>
   );
 }
